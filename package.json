@@ -1,0 +1,83 @@
+{
+  "name": "senju",
+  "version": "0.1.0",
+  "description": "The IDE for multitasking in the age of AI",
+  "author": "Evgeny",
+  "license": "MIT",
+  "private": true,
+  "main": "dist/main.js",
+  "scripts": {
+    "build": "node build.mjs",
+    "start": "npm run build && electron . --no-sandbox",
+    "typecheck": "tsc --noEmit -p .",
+    "test": "vitest run",
+    "test:daemon": "npm run build && node scripts/daemon-smoke.mjs",
+    "test:ui": "npm run build && node scripts/ui-smoke.mjs",
+    "postinstall": "electron-rebuild -f -w node-pty",
+    "dist": "npm run build && electron-builder",
+    "test:perf": "npm run build && node scripts/latency-probe.mjs 30 && node scripts/ui-latency.mjs 20 && node scripts/perf-smoke.mjs",
+    "icons": "electron --no-sandbox scripts/render-icons.cjs",
+    "screenshots": "npm run build && node scripts/screenshots.mjs"
+  },
+  "dependencies": {
+    "node-pty": "^1.1.0"
+  },
+  "devDependencies": {
+    "@electron/rebuild": "^4.2.1",
+    "@fontsource/ibm-plex-mono": "^5.3.0",
+    "@fontsource/ibm-plex-sans": "^5.3.0",
+    "@types/node": "^24.19.2",
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/addon-serialize": "^0.14.0",
+    "@xterm/addon-unicode11": "^0.9.0",
+    "@xterm/addon-web-links": "^0.12.0",
+    "@xterm/headless": "^6.0.0",
+    "@xterm/xterm": "^6.0.0",
+    "electron": "^45.3.4",
+    "electron-builder": "^26.18.0",
+    "esbuild": "^0.28.2",
+    "playwright-core": "^1.65.1",
+    "typescript": "^7.0.2",
+    "vitest": "^5.1.1"
+  },
+  "allowScripts": {
+    "esbuild@0.28.2": true,
+    "node-pty@1.1.0": true,
+    "electron-winstaller@5.4.0": true
+  },
+  "build": {
+    "appId": "dev.senju.terminal",
+    "productName": "Senju",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "!dist/**/*.map",
+      "package.json"
+    ],
+    "asarUnpack": [
+      "node_modules/node-pty/**"
+    ],
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "System;TerminalEmulator",
+      "icon": "build/icons"
+    },
+    "mac": {
+      "target": [
+        "dmg"
+      ],
+      "category": "public.app-category.developer-tools"
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    },
+    "icon": "build/icon.png"
+  }
+}

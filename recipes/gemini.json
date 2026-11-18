@@ -1,0 +1,5 @@
+{
+  "name": "gemini",
+  "match": "^gemini$|@google/gemini-cli",
+  "fallback": "gemini --resume latest"
+}

@@ -1,0 +1,5 @@
+{
+  "name": "aider",
+  "match": "^aider$",
+  "fallback": "aider ${args} --restore-chat-history"
+}
