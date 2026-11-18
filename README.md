@@ -222,6 +222,27 @@ The code is split by process:
 - `src/shared` — state types, the protocol, layout operations, commands, settings and themes.
 - `recipes` — built-in agent recipes.
 
+## Releases and versioning
+
+Releases follow [semantic versioning](https://semver.org). The version is decided by what someone who updates notices, not by how big the change is:
+
+| Bump | When | Examples |
+| --- | --- | --- |
+| **major** | Something stops working as before without the user doing anything | `state.json` from an older version is not read and has no migration; a `settings.json` key or the recipe format changes incompatibly; a feature or platform is removed; a default shortcut people rely on changes |
+| **minor** | Something new, and everything old works as before | a new command, setting, theme or agent recipe; a new state field with an automatic migration; a protocol change that makes the update restart the background service |
+| **patch** | Fixed or faster, nothing new | a bug fix, a performance gain, layout or wording |
+| none | Nothing reaches users | tests, CI, refactoring, documentation |
+
+While the version is below 1.0, a breaking change bumps the minor version and a feature the patch version. 1.0.0 is released by hand once the data and settings formats are stable.
+
+The bump is computed from [Conventional Commits](https://www.conventionalcommits.org). Pull requests are squash-merged, so the PR title is the commit message, and CI checks it:
+
+- `feat: …` → minor, `fix: …` and `perf: …` → patch
+- `feat!: …`, or a `BREAKING CHANGE:` paragraph in the PR description → major
+- `docs:`, `test:`, `ci:`, `build:`, `refactor:`, `chore:`, `style:` → no release
+
+After each merge, [release-please](https://github.com/googleapis/release-please) updates a `chore: release x.y.z` pull request with the new version and changelog. Merging it tags the version, publishes the GitHub release and attaches the installers for Linux (AppImage, deb), macOS (dmg, Apple silicon and Intel) and Windows (installer), built by CI. The installers are not code-signed yet, so macOS and Windows warn on first start.
+
 ## License
 
 [MIT](LICENSE)

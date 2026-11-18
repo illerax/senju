@@ -4,6 +4,11 @@
   "description": "The IDE for multitasking in the age of AI",
   "author": "Evgeny",
   "license": "MIT",
+  "homepage": "https://github.com/illerax/senju",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/illerax/senju.git"
+  },
   "private": true,
   "main": "dist/main.js",
   "scripts": {
@@ -65,11 +70,18 @@
         "deb"
       ],
       "category": "System;TerminalEmulator",
-      "icon": "build/icons"
+      "icon": "build/icons",
+      "maintainer": "Evgeny <13949632+illerax@users.noreply.github.com>"
     },
     "mac": {
       "target": [
-        "dmg"
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        }
       ],
       "category": "public.app-category.developer-tools"
     },
@@ -78,6 +90,8 @@
         "nsis"
       ]
     },
-    "icon": "build/icon.png"
+    "icon": "build/icon.png",
+    "publish": null,
+    "artifactName": "Senju-${version}-${os}-${arch}.${ext}"
   }
 }

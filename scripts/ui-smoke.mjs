@@ -13,6 +13,11 @@ fs.mkdirSync(out, { recursive: true });
 const home = fs.mkdtempSync(path.join(os.tmpdir(), 'senju-ui-'));
 const env = { ...process.env, SENJU_HOME: home, XDG_RUNTIME_DIR: home };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+let failures = 0;
+const report = (label, ok) => {
+  console.log(`${ok ? 'ok  ' : 'FAIL'} ${label}`);
+  if (!ok) failures++;
+};
 
 function daemonSend(msg) {
   return new Promise((resolve, reject) => {
@@ -70,7 +75,7 @@ await page.screenshot({ path: path.join(out, '2-splits.png') });
 const state = () => page.evaluate(() => window.senju.state());
 const panesOf = (node) => (node.type === 'pane' ? [node] : node.children.flatMap(panesOf));
 const active = (st) => st.groups.flatMap((g) => g.workspaces).find((w) => w.id === st.activeWorkspaceId);
-const report = (label, ok) => console.log(`${label}: ${ok}`);
+
 
 let st = await state();
 report('sidebar groups', (await page.locator('.group').count()) === 2);
@@ -138,7 +143,7 @@ await page.waitForSelector('.pane .xterm');
 await sleep(1500);
 await page.screenshot({ path: path.join(out, '3-reopened.png') });
 const text = await page.locator('#workspace').innerText();
-console.log(`screen kept after reopen: ${text.includes('sleep 600') && text.includes('git log')}`);
+report('screen kept after reopen', text.includes('sleep 600') && text.includes('git log'));
 
 // Stop everything, as a reboot would, and start again.
 await stopAll(app, page);
@@ -148,8 +153,10 @@ await page.waitForSelector('.pane .xterm');
 await sleep(2500);
 await page.screenshot({ path: path.join(out, '4-restored.png') });
 const restored = await page.locator('#workspace').innerText();
-console.log(`scrollback restored: ${restored.includes('restored')}`);
-console.log(`run again offered: ${await page.locator('.terminal-overlay.visible').count()}`);
+report('scrollback restored', restored.includes('restored'));
+report('run again offered', (await page.locator('.terminal-overlay.visible').count()) === 1);
 await stopAll(app, page);
 fs.rmSync(home, { recursive: true, force: true });
 console.log(`screenshots in ${out}`);
+console.log(failures ? `${failures} check(s) failed` : 'all checks passed');
+process.exit(failures ? 1 : 0);

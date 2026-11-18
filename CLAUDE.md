@@ -22,6 +22,12 @@ Everything in this repository must be in English: code, comments, identifiers, d
 - `npm start` passes `--no-sandbox`: on Ubuntu 24.04+ Electron's sandbox needs a setuid `chrome-sandbox` when run from source.
 - npm 11 blocks install scripts: a new native dependency needs `npm install-scripts approve <pkg>` (recorded in `allowScripts`).
 
+## Pull requests and releases
+
+- PRs are squash-merged; the PR title is the commit and must be a Conventional Commit (CI checks it). release-please derives versions and the changelog from it.
+- Pick the type by what users notice after updating (full table in README, "Releases and versioning"): `feat` new behavior; `fix`/`perf` corrections; `feat!` or a `BREAKING CHANGE:` paragraph when stored state, settings, recipes or default shortcuts stop working as before without a migration; `docs`/`test`/`ci`/`refactor`/`chore` ship nothing.
+- A `PROTOCOL_VERSION` bump forces a daemon restart on update: at least `feat`, and say so in the PR description.
+
 ## Testing gotchas
 
 - Always launch test instances with `SENJU_HOME=<tmp>` (and `XDG_RUNTIME_DIR`): it isolates state, socket, Electron profile and the single-instance lock, so tests run while the user's Senju is open.
