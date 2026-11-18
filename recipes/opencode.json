@@ -1,0 +1,9 @@
+{
+  "name": "opencode",
+  "match": "^opencode$|opencode-ai",
+  "session": {
+    "args": ["(?:--session|-s)[ =](\\S+)"]
+  },
+  "resume": "opencode --session ${sessionId}",
+  "fallback": "opencode --continue"
+}

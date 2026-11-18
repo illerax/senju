@@ -1,0 +1,26 @@
+{
+  "name": "claude-code",
+  "match": "^claude$|@anthropic-ai/claude-code",
+  "session": {
+    "args": ["(?:--resume|-r|--session-id)[ =]([0-9a-f-]{36})"],
+    "pidFile": {
+      "file": "${env:CLAUDE_CONFIG_DIR:-~/.claude}/sessions/${pid}.json",
+      "field": "sessionId"
+    },
+    "files": {
+      "dir": "${env:CLAUDE_CONFIG_DIR:-~/.claude}/projects/${cwdSlug}",
+      "pattern": "^([0-9a-f-]{36})\\.jsonl$"
+    }
+  },
+  "flags": {
+    "drop": ["--resume", "-r", "--session-id", "--continue", "-c", "--print", "-p", "--fork-session"],
+    "withValue": [
+      "--resume", "-r", "--session-id", "--model", "--fallback-model", "--permission-mode", "--add-dir",
+      "--settings", "--setting-sources", "--mcp-config", "--allowedTools", "--allowed-tools",
+      "--disallowedTools", "--disallowed-tools", "--append-system-prompt", "--system-prompt",
+      "--agent", "--agents", "--plugin-dir", "--output-format", "--input-format", "--betas"
+    ]
+  },
+  "resume": "claude ${flags} --resume ${sessionId}",
+  "fallback": "claude ${flags} --continue"
+}

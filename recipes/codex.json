@@ -1,0 +1,16 @@
+{
+  "name": "codex",
+  "match": "^codex$|@openai/codex",
+  "session": {
+    "args": ["\\bresume ([0-9a-f-]{36})"],
+    "files": {
+      "dir": "${env:CODEX_HOME:-~/.codex}/sessions",
+      "pattern": "^rollout-.*-([0-9a-f-]{36})\\.jsonl$",
+      "recursive": true,
+      "newestDirs": 2,
+      "contains": "\"cwd\":${cwdJson}"
+    }
+  },
+  "resume": "codex resume ${sessionId}",
+  "fallback": "codex resume --last"
+}

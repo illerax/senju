@@ -1,0 +1,6 @@
+{
+  "name": "nvim",
+  "match": "^n?vim$",
+  "requires": "Session.vim",
+  "fallback": "${program} -S Session.vim"
+}
