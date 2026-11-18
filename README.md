@@ -55,9 +55,26 @@ Close the window, crash it, update it or reboot the computer: the layout, the ta
   </tr>
 </table>
 
-## Getting started
+## Install
 
-Senju is built from source for now. You need:
+On Linux and macOS, run:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/illerax/senju/main/install.sh | sh
+```
+
+The script installs the latest [release](https://github.com/illerax/senju/releases/latest) without root access, and running it again updates Senju:
+
+- **Linux** (x86_64): the AppImage goes to `~/.local/bin/senju`, with an entry in the applications menu. AppImages need FUSE 2 (`sudo apt install libfuse2t64` on Ubuntu 24.04+).
+- **macOS** (Apple silicon and Intel): `Senju.app` goes to `/Applications`. The app is not code-signed yet; the script clears the quarantine flag so macOS opens it.
+
+Pass options after `sh -s --`: `--version 0.1.1` installs a given version, `--uninstall` removes the app. Neither touches your settings, state or running terminals.
+
+You can also download the installers from the [releases page](https://github.com/illerax/senju/releases/latest): the AppImage or a deb package for Linux, a dmg for macOS, and an installer for Windows.
+
+## Building from source
+
+You need:
 
 - **Node.js 22** or newer
 - a **C/C++ toolchain** for [node-pty](https://github.com/microsoft/node-pty): `build-essential` and `python3` on Debian/Ubuntu, the Xcode command line tools on macOS, Visual Studio Build Tools on Windows
