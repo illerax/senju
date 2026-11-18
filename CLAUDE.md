@@ -16,8 +16,18 @@ Everything in this repository must be in English: code, comments, identifiers, d
 - `npm run typecheck`, `npm test` (vitest, pure modules only).
 - `npm run test:daemon` — end-to-end daemon test in a throwaway `SENJU_HOME`; run it after touching `src/daemon`.
 - `npm run test:ui` — drives the app with Playwright and saves screenshots; run it after touching `src/renderer` or `src/main`, and look at the screenshots.
+- `npm run test:perf` — keystroke latency under heavy output and UI switching times; run it after changes to the daemon's hot paths or the renderer's render loop.
+- `npm run screenshots` — regenerates `docs/screenshots/` in a demo HOME (`/tmp/senju-demo`); never commit screenshots showing real user names or paths (the repo is public).
 - `npm run icons` renders `build/icon.svg` (the logo) into `build/icon.png` and `build/icons/*.png`; rerun it after changing the logo and commit the PNGs.
 - `npm start` passes `--no-sandbox`: on Ubuntu 24.04+ Electron's sandbox needs a setuid `chrome-sandbox` when run from source.
+- npm 11 blocks install scripts: a new native dependency needs `npm install-scripts approve <pkg>` (recorded in `allowScripts`).
+
+## Testing gotchas
+
+- Always launch test instances with `SENJU_HOME=<tmp>` (and `XDG_RUNTIME_DIR`): it isolates state, socket, Electron profile and the single-instance lock, so tests run while the user's Senju is open.
+- Playwright's `app.close()` hangs because the daemon outlives the UI; end a test with `window.senju.stopAll()` and wait for the process `exit` event.
+- Stray test daemons: find them by `SENJU_HOME` in `/proc/<pid>/environ`; never `pkill -f` a pattern, it can match the calling shell.
+- Fake agents in tests: run them by absolute path with a user recipe override; a bare `claude` starts the real one from the user's PATH.
 
 ## Architecture
 
@@ -25,7 +35,6 @@ Everything in this repository must be in English: code, comments, identifiers, d
 - The daemon runs as a detached `ELECTRON_RUN_AS_NODE` process and outlives the UI. A running daemon keeps its old code. Its hello carries a build id (a hash of the sources, `build.mjs`); when it differs from the UI's, the UI shows a banner offering to restart the daemon. Never restart it silently — that kills the users' processes.
 - Protocol (`src/shared/protocol.ts`) is newline-delimited JSON over a Unix socket / named pipe. Bump `PROTOCOL_VERSION` on incompatible changes; a UI replaces a daemon with another version.
 - State is saved atomically (`src/daemon/store.ts`): the workspace structure in one small `state.json` on every change, in the background (a blocking fsync stalls keystrokes); each terminal's scrollback in `scrollback/<id>.ansi`, one terminal per tick, less often for busy ones, and all on shutdown. Never put large data into `state.json`.
-- `npm run test:perf` measures keystroke latency under heavy output and UI switching times; run it after changes to the daemon's hot paths or the renderer's render loop.
 - Restore levels: live process (daemon survives) → agent resume via recipes (`recipes/*.json`, `src/daemon/recipes.ts`) → command restart or "Run again" (`src/daemon/restore.ts`). Agent support is added with recipes, not code.
 - A vanished job or a shell killed by a signal is kept for a grace period, so processes killed by a system shutdown are still restored, while ones the user closed are not.
 - Process inspection (`src/daemon/procinfo.ts`) reads `/proc` on Linux, uses `ps`/`lsof` on macOS and is unavailable on Windows.
@@ -33,3 +42,5 @@ Everything in this repository must be in English: code, comments, identifiers, d
 - UI design system (`src/renderer/styles.css`): every color derives from the theme's background and foreground plus the brand amber; one bar height (`--bar`), row height (`--row`) and radius scale; icons only from `src/renderer/icons.ts`; menus and dialogs are drawn by the app (`menu.ts`, `dialog.ts`, `color-picker.ts`), never native, so they follow the theme.
 - Commands and their default shortcuts live in `src/shared/commands.ts`; users override them in settings (`keybindings`). Defaults must not take keys that programs inside a terminal can receive: Ctrl+Shift combinations and Ctrl+Tab on Linux/Windows, Cmd on macOS.
 - Settings (`src/shared/settings.ts`) are saved from the settings page and keep only values that differ from the defaults. Renderer code must not import modules that touch the file system; theme helpers live in `src/shared/themes.ts`.
+- The renderer re-renders on every state broadcast; keep DOM elements per id and update them in place (`placeChildren`), or double clicks, focus and inline renames break.
+- The renderer is offline under a strict CSP: fonts are bundled (`@fontsource`, esbuild file loader), nothing loads from the network.
