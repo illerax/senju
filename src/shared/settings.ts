@@ -26,6 +26,8 @@ export interface Settings extends Font {
    */
   autoRestart: string[];
   copyOnSelect: boolean;
+  /** Look for new releases at start and every few hours; installing always asks first. */
+  checkForUpdates: boolean;
 }
 
 export const defaultSettings: Settings = {
@@ -47,6 +49,7 @@ export const defaultSettings: Settings = {
     '^(top|htop|btop|watch)\\b',
   ],
   copyOnSelect: false,
+  checkForUpdates: true,
 };
 
 function readUserSettings(): Record<string, unknown> {

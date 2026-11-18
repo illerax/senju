@@ -39,13 +39,13 @@ jobs:
         include:
           - os: ubuntu-latest
             args: --linux AppImage deb
-            files: release/*.AppImage release/*.deb
+            files: release/*.AppImage release/*.deb release/latest-linux.yml
           - os: macos-latest
             args: --mac --arm64 --x64
             files: release/*.dmg
           - os: windows-latest
             args: --win
-            files: release/*.exe
+            files: release/*.exe release/*.exe.blockmap release/latest.yml
     runs-on: ${{ matrix.os }}
     env:
       TAG: ${{ needs.release-please.outputs.tag || inputs.tag }}
@@ -63,7 +63,8 @@ jobs:
         run: npx electron-builder ${{ matrix.args }} --publish never
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
-      - name: Attach installers to the release
+      # The latest*.yml files tell installed apps that this version exists; see src/main/updater.ts.
+      - name: Attach installers and update metadata to the release
         shell: bash
         run: gh release upload "$TAG" ${{ matrix.files }} --clobber
         env:

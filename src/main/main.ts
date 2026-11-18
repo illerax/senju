@@ -9,15 +9,37 @@ import { BUILD_ID } from '../shared/build';
 import { paths } from '../shared/paths';
 import { loadSettings, resolveTheme, saveSettings, type Settings } from '../shared/settings';
 import type { AppState, UiState } from '../shared/types';
-import { DaemonClient } from './daemon-client';
+import { DaemonClient, DaemonReplaceDeclined } from './daemon-client';
+import { daemonLauncher } from './daemon-runtime';
+import { Updater } from './updater';
+import type { UpdateAction } from '../shared/update';
 
-const daemon = new DaemonClient(path.join(__dirname, 'daemon.js'));
+const daemon = new DaemonClient(
+  () => daemonLauncher(path.join(__dirname, 'daemon.js')),
+  async () => {
+    // Before any window exists, so a system dialog is the only way to ask.
+    const { response } = await dialog.showMessageBox({
+      type: 'question',
+      buttons: ['Restart service', 'Quit'],
+      defaultId: 0,
+      cancelId: 1,
+      title: 'Senju',
+      message: 'This version of Senju needs to restart its background service.',
+      detail: 'Running programs stop and come back as after a reboot: layout, folders and scrollback are restored, agents resume their sessions. Quit to keep them running with the version you had.',
+    });
+    return response === 0;
+  },
+);
 let win: BrowserWindow | null = null;
 let lastUi: UiState = {};
 let lastState: AppState | null = null;
 let resolveFirstState: () => void;
 const firstState = new Promise<void>((resolve) => (resolveFirstState = resolve));
 let quitting = false;
+const updater = new Updater(
+  (status) => win?.webContents.send('update', status),
+  () => loadSettings().checkForUpdates,
+);
 
 function send(msg: DaemonMessage | { type: 'connected'; outdated: boolean }): void {
   win?.webContents.send('daemon', msg);
@@ -145,6 +167,18 @@ function registerIpc(): void {
     daemonOutdated: daemon.outdated,
   }));
   ipcMain.on('restartDaemon', () => daemon.restartDaemon());
+  ipcMain.handle('updateStatus', () => updater.current);
+  ipcMain.on('updateAction', (_e, action: UpdateAction) => {
+    if (action === 'check') void updater.check();
+    if (action === 'download') void updater.download();
+    if (action === 'install') {
+      // Leave the daemon running: the new version reconnects to it.
+      quitting = true;
+      daemon.close();
+      updater.install();
+    }
+    if (action === 'dismiss') updater.dismiss();
+  });
 }
 
 // An isolated home (used by tests) gets its own browser profile and single-instance lock.
@@ -171,6 +205,7 @@ if (!app.requestSingleInstanceLock()) {
     send(msg);
   });
   daemon.on('connected', () => send({ type: 'connected', outdated: daemon.outdated }));
+  daemon.on('declined', () => app.quit());
 
   void app.whenReady().then(async () => {
     buildMenu();
@@ -178,6 +213,10 @@ if (!app.requestSingleInstanceLock()) {
     try {
       await daemon.connect();
     } catch (err) {
+      if (err instanceof DaemonReplaceDeclined) {
+        app.quit();
+        return;
+      }
       dialog.showErrorBox('Senju', `Could not connect to the Senju daemon.\n\n${String(err)}`);
       app.quit();
       return;
@@ -185,6 +224,7 @@ if (!app.requestSingleInstanceLock()) {
     // Wait for the first state so the window opens with its saved bounds.
     await firstState;
     createWindow();
+    updater.start();
   });
 
   app.on('activate', () => {

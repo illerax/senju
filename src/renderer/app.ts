@@ -12,6 +12,7 @@ import '@xterm/xterm/css/xterm.css';
 import './styles.css';
 import type { Action, DaemonMessage, SplitSide } from '../shared/protocol';
 import type { Settings } from '../shared/settings';
+import type { UpdateStatus } from '../shared/update';
 import { isLight, resolveTheme } from '../shared/themes';
 import type { AppState, GroupState, LayoutNode, PaneNode, SplitNode, TerminalState, WorkspaceState } from '../shared/types';
 import { findPaneNode, panes, terminalIds } from '../shared/layout';
@@ -999,20 +1000,62 @@ function onMessage(msg: UiMessage): void {
   }
 }
 
+/** Shows, replaces or (with null) removes one banner row above the window. */
+function setBanner(id: string, text: string | null, buttons: { label: string; primary?: boolean; run: () => void }[] = []): void {
+  const host = $('banner');
+  let row = host.querySelector<HTMLElement>(`[data-banner="${id}"]`);
+  if (text === null) {
+    row?.remove();
+  } else {
+    if (!row) {
+      row = el('div', 'banner-row');
+      row.dataset.banner = id;
+      host.append(row);
+    }
+    const label = el('span', 'banner-text', text);
+    row.replaceChildren(
+      label,
+      ...buttons.map(({ label: name, primary, run }) => {
+        const button = el('button', `button${primary ? ' primary' : ''}`, name);
+        button.addEventListener('click', run);
+        return button;
+      }),
+    );
+  }
+  host.hidden = host.children.length === 0;
+}
+
 /** Offers to restart a daemon left running from an older build, which ignores newer actions. */
 function showOutdated(outdated: boolean): void {
-  const banner = $('banner');
-  banner.hidden = !outdated;
-  if (!outdated) return;
-  const text = el('span', 'banner-text', 'Senju was updated, but the background service still runs the old version. Restart it to apply the update; terminals come back as after a reboot.');
-  const restart = el('button', 'button primary', 'Restart service');
-  restart.addEventListener('click', () => {
-    banner.hidden = true;
-    senju.restartDaemon();
-  });
-  const later = el('button', 'button', 'Later');
-  later.addEventListener('click', () => (banner.hidden = true));
-  banner.replaceChildren(text, restart, later);
+  if (!outdated) return setBanner('outdated', null);
+  setBanner('outdated', 'Senju was updated, but the background service still runs the previous version. Restart it to use the new one; terminals come back as after a reboot.', [
+    { label: 'Restart service', primary: true, run: () => (setBanner('outdated', null), senju.restartDaemon()) },
+    { label: 'Later', run: () => setBanner('outdated', null) },
+  ]);
+}
+
+/** The update banner: offered, downloading, ready to install. */
+function showUpdate(status: UpdateStatus): void {
+  settingsView?.render();
+  switch (status.state) {
+    case 'available':
+      return setBanner('update', `Senju ${status.version} is available.`, [
+        { label: status.manual ? 'Download' : 'Download and install', primary: true, run: () => senju.updateAction('download') },
+        { label: 'What’s new', run: () => senju.openExternal(status.url) },
+        { label: 'Later', run: () => senju.updateAction('dismiss') },
+      ]);
+    case 'downloading':
+      return setBanner('update', `Downloading Senju ${status.version}… ${status.percent}%`);
+    case 'ready':
+      return setBanner('update', `Senju ${status.version} is ready. Restarting the app installs it; your terminals keep running.`, [
+        { label: 'Restart and install', primary: true, run: () => senju.updateAction('install') },
+        { label: 'Later', run: () => setBanner('update', null) },
+      ]);
+    case 'error':
+      return setBanner('update', `The update failed: ${status.message}`, [{ label: 'Dismiss', run: () => setBanner('update', null) }]);
+    default:
+      return setBanner('update', null);
+  }
 }
 
 /** Applies settings to the whole window: shortcuts, theme and fonts. */
@@ -1042,6 +1085,8 @@ async function main(): Promise<void> {
     settings: () => settings,
     save: async (patch) => applySettings(await senju.saveSettings(patch)),
     appInfo: () => senju.appInfo(),
+    updateStatus: () => senju.updateStatus(),
+    updateAction: (action) => senju.updateAction(action),
     copy: (text) => senju.clipboardWrite(text),
     openSettingsFile: () => senju.openConfig('settings'),
     openRecipesFolder: () => senju.openConfig('recipes'),
@@ -1073,6 +1118,9 @@ async function main(): Promise<void> {
 
   senju.onMessage((msg) => onMessage(msg as UiMessage));
   showOutdated(await senju.daemonOutdated());
+  senju.onUpdate(showUpdate);
+  const update = await senju.updateStatus();
+  if (update.state !== 'idle') showUpdate(update);
   const initial = (await senju.state()) as AppState | null;
   if (initial && !state) onMessage({ type: 'state', state: initial });
 }

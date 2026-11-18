@@ -5,10 +5,12 @@ import { spawn } from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
 import net from 'node:net';
+import os from 'node:os';
 import path from 'node:path';
 import { PROTOCOL_VERSION, type ClientMessage, type DaemonMessage } from '../shared/protocol';
 import { BUILD_ID } from '../shared/build';
 import { paths } from '../shared/paths';
+import type { DaemonLauncher } from './daemon-runtime';
 
 function connectOnce(): Promise<net.Socket> {
   return new Promise((resolve, reject) => {
@@ -23,23 +25,35 @@ function connectOnce(): Promise<net.Socket> {
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-function startDaemon(script: string): void {
+async function startDaemon(launch: () => Promise<DaemonLauncher>): Promise<void> {
+  const { executable, script, env } = await launch();
   fs.mkdirSync(path.dirname(paths.logFile), { recursive: true });
   const log = fs.openSync(paths.logFile, 'a');
-  const child = spawn(process.execPath, [script], {
+  const child = spawn(executable, [script], {
     detached: true,
+    // Not the app's own folder: inside an AppImage that is its mount, which must be able to go away.
+    cwd: os.homedir(),
     stdio: ['ignore', log, log],
-    env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
+    env,
     windowsHide: true,
   });
   child.unref();
   fs.closeSync(log);
 }
 
+/** The user chose not to restart an incompatible daemon. */
+export class DaemonReplaceDeclined extends Error {
+  constructor() {
+    super('the user kept the running background service');
+  }
+}
+
 export interface DaemonClientEvents {
   message: [DaemonMessage];
   /** A new connection was established; panes must be attached again. */
   connected: [];
+  /** The user kept an incompatible daemon running; this UI cannot use it. */
+  declined: [];
 }
 
 export class DaemonClient extends EventEmitter<DaemonClientEvents> {
@@ -47,7 +61,11 @@ export class DaemonClient extends EventEmitter<DaemonClientEvents> {
   private closing = false;
   private daemonBuild = '';
 
-  constructor(private readonly script: string) {
+  constructor(
+    private readonly launch: () => Promise<DaemonLauncher>,
+    /** Asked before an incompatible daemon is replaced, which restarts the user's programs. */
+    private readonly confirmReplace: () => Promise<boolean>,
+  ) {
     super();
   }
 
@@ -61,7 +79,11 @@ export class DaemonClient extends EventEmitter<DaemonClientEvents> {
         return;
       }
       if (attempt > 0) throw new Error(`daemon speaks protocol ${hello.protocol}, expected ${PROTOCOL_VERSION}`);
-      // An older or newer daemon: ask it to save and stop, then start ours.
+      // An older or newer daemon: with the user's consent, ask it to save and stop, then start ours.
+      if (!(await this.confirmReplace())) {
+        socket.destroy();
+        throw new DaemonReplaceDeclined();
+      }
       socket.write(`${JSON.stringify({ type: 'shutdown' } satisfies ClientMessage)}\n`);
       socket.resume();
       await new Promise((resolve) => socket.once('close', resolve));
@@ -72,7 +94,7 @@ export class DaemonClient extends EventEmitter<DaemonClientEvents> {
     try {
       return await connectOnce();
     } catch {
-      startDaemon(this.script);
+      await startDaemon(this.launch);
     }
     for (let i = 0; i < 100; i++) {
       await delay(100);
@@ -133,7 +155,12 @@ export class DaemonClient extends EventEmitter<DaemonClientEvents> {
       try {
         await this.connect();
         return;
-      } catch {
+      } catch (err) {
+        if (err instanceof DaemonReplaceDeclined) {
+          this.closing = true;
+          this.emit('declined');
+          return;
+        }
         await delay(1000);
       }
     }
