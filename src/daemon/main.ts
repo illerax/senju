@@ -551,6 +551,30 @@ function ensureSingleInstance(): Promise<void> {
   });
 }
 
+/**
+ * Closes files the UI process left open for us. Chromium opens its own files
+ * without close-on-exec, so a daemon started from an AppImage would otherwise
+ * keep that version's mount alive after an update, and pass the files on to
+ * every shell.
+ */
+function closeInheritedAppFiles(): void {
+  if (process.platform !== 'linux') return;
+  let fds: string[];
+  try {
+    fds = fs.readdirSync('/proc/self/fd');
+  } catch {
+    return;
+  }
+  for (const fd of fds.map(Number).filter((n) => n > 2)) {
+    try {
+      if (fs.readlinkSync(`/proc/self/fd/${fd}`).includes('/.mount_')) fs.closeSync(fd);
+    } catch {
+      // Already closed, or not ours to inspect.
+    }
+  }
+}
+
+closeInheritedAppFiles();
 process.on('uncaughtException', (err) => log('uncaught exception', err));
 process.on('unhandledRejection', (err) => log('unhandled rejection', err));
 

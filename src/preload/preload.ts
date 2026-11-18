@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
+import type { UpdateAction, UpdateStatus } from '../shared/update';
 
 
 const api = {
@@ -21,6 +22,11 @@ const api = {
   appInfo: () =>
     ipcRenderer.invoke('appInfo') as Promise<{ version: string; build: string; electron: string; chrome: string; node: string; platform: string; daemonOutdated: boolean }>,
   restartDaemon: () => ipcRenderer.send('restartDaemon'),
+  updateStatus: () => ipcRenderer.invoke('updateStatus') as Promise<UpdateStatus>,
+  updateAction: (action: UpdateAction) => ipcRenderer.send('updateAction', action),
+  onUpdate: (callback: (status: UpdateStatus) => void) => {
+    ipcRenderer.on('update', (_e, status) => callback(status));
+  },
 };
 
 export type SenjuApi = typeof api;

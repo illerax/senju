@@ -25,6 +25,7 @@
     "screenshots": "npm run build && node scripts/screenshots.mjs"
   },
   "dependencies": {
+    "electron-updater": "^6.8.11",
     "node-pty": "^1.1.0"
   },
   "devDependencies": {
@@ -91,7 +92,12 @@
       ]
     },
     "icon": "build/icon.png",
-    "publish": null,
+    "publish": {
+      "provider": "github",
+      "owner": "illerax",
+      "repo": "senju",
+      "releaseType": "release"
+    },
     "artifactName": "Senju-${version}-${os}-${arch}.${ext}"
   }
 }

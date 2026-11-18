@@ -42,6 +42,13 @@ export const paths = {
   get runtimeDir() {
     return baseDirs().runtime;
   },
+  /** Copies of the app the daemon runs from where installers would stop it otherwise. */
+  get daemonCopies() {
+    if (process.env.SENJU_HOME) return path.join(process.env.SENJU_HOME, 'daemon-runtime');
+    if (process.platform === 'win32') return path.join(process.env.LOCALAPPDATA ?? baseDirs().state, 'Senju', 'daemon-runtime');
+    const data = process.env.XDG_DATA_HOME || path.join(os.homedir(), '.local', 'share');
+    return path.join(process.platform === 'linux' ? path.join(data, 'senju') : baseDirs().state, 'daemon-runtime');
+  },
   get socket() {
     if (process.platform === 'win32') {
       const user = (process.env.USERNAME ?? 'user').replace(/[^\w-]/g, '_');

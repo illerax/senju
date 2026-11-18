@@ -202,20 +202,25 @@ input.rename {
 
 #banner {
   display: flex;
-  align-items: center;
-  gap: 10px;
+  flex-direction: column;
   flex: none;
-  height: var(--bar);
-  padding: 0 12px;
-  background: color-mix(in srgb, var(--accent) 14%, var(--sidebar));
-  border-bottom: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
 }
 
 #banner[hidden] {
   display: none;
 }
 
-#banner .button {
+.banner-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: var(--bar);
+  padding: 0 12px;
+  background: color-mix(in srgb, var(--accent) 14%, var(--sidebar));
+  border-bottom: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+}
+
+.banner-row .button {
   height: 24px;
 }
 
@@ -1470,4 +1475,27 @@ select.settings-input {
   margin: 0;
   align-self: center;
   font: 12px var(--mono);
+}
+
+.about-updates {
+  margin-top: 8px;
+}
+
+.about-updates .theme-actions {
+  margin: 0 0 12px;
+}
+
+.checkbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  cursor: pointer;
+}
+
+.checkbox input {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  accent-color: var(--accent);
 }

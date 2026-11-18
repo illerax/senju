@@ -3,6 +3,7 @@
 
 import { commandCategories, commandIds, commands, defaultBindings, type Command } from '../shared/commands';
 import type { Settings } from '../shared/settings';
+import type { UpdateAction, UpdateStatus } from '../shared/update';
 import { builtinThemes, resolveFont, resolveTheme, themeKeys, type Font, type Theme, type ThemeColor } from '../shared/themes';
 import { openColorPicker } from './color-picker';
 import { iconButton, iconSvg } from './icons';
@@ -21,6 +22,8 @@ export interface AppInfo {
 export interface SettingsContext {
   platform: string;
   appInfo: () => Promise<AppInfo>;
+  updateStatus: () => Promise<UpdateStatus>;
+  updateAction: (action: UpdateAction) => void;
   copy: (text: string) => void;
   settings: () => Settings;
   save: (patch: Partial<Settings>) => Promise<void>;
@@ -187,6 +190,8 @@ export class SettingsView {
     );
     const facts = el('dl', 'about-facts');
     page.append(facts);
+    const updates = el('div', 'about-updates');
+    void this.ctx.updateStatus().then((status) => updates.replaceChildren(...this.updateSection(status)));
     void this.ctx.appInfo().then((info) => {
       const rows: [string, string][] = [
         ['Version', info.version],
@@ -203,9 +208,45 @@ export class SettingsView {
         this.ctx.copy(rows.map(([t, v]) => `${t}: ${v}`).join('\n'));
         copy.textContent = 'Copied';
       });
-      page.append(copy);
+      page.append(copy, updates);
     });
     return page;
+  }
+
+  private updateSection(status: UpdateStatus): HTMLElement[] {
+    const describe: Record<UpdateStatus['state'], string> = {
+      idle: 'Not checked yet.',
+      unsupported: status.state === 'unsupported' ? status.reason : '',
+      checking: 'Checking for updates…',
+      current: status.state === 'current' ? `Senju is up to date (checked ${new Date(status.checkedAt).toLocaleTimeString()}).` : '',
+      available: status.state === 'available' ? `Senju ${status.version} is available.` : '',
+      downloading: status.state === 'downloading' ? `Downloading Senju ${status.version}… ${status.percent}%` : '',
+      ready: status.state === 'ready' ? `Senju ${status.version} is downloaded and installs when the app restarts.` : '',
+      error: status.state === 'error' ? `The last check failed: ${status.message}` : '',
+    };
+    const heading = el('h3', '', 'Updates');
+    const text = el('p', 'settings-hint', describe[status.state]);
+    const actions = el('div', 'theme-actions');
+    const button = (label: string, action: UpdateAction, primary = false) => {
+      const b = el('button', `button${primary ? ' primary' : ''}`, label);
+      b.addEventListener('click', () => this.ctx.updateAction(action));
+      return b;
+    };
+    if (status.state === 'available') actions.append(button(status.manual ? 'Download' : 'Download and install', 'download', true));
+    if (status.state === 'ready') actions.append(button('Restart and install', 'install', true));
+    if (status.state !== 'unsupported' && status.state !== 'checking' && status.state !== 'downloading') actions.append(button('Check for updates', 'check'));
+    const auto = el('label', 'checkbox');
+    const box = el('input');
+    box.type = 'checkbox';
+    box.checked = this.ctx.settings().checkForUpdates;
+    box.addEventListener('change', () => void this.ctx.save({ checkForUpdates: box.checked }));
+    auto.append(box, document.createTextNode('Check for updates automatically'));
+    const note = el(
+      'p',
+      'settings-hint',
+      'Senju looks for a new release at start and every few hours, and only downloads and installs it when you agree. Your settings stay as they are, and running terminals keep running through the update.',
+    );
+    return [heading, text, actions, auto, note];
   }
 
   // --- shortcuts ---

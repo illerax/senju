@@ -138,6 +138,15 @@ The structure — groups, workspaces, layout, tabs, focus, folders and scrollbac
 
 When Senju is updated while the service is still running the previous version, a banner offers **Restart service**, which applies the update and restores the terminals as after a reboot.
 
+## Updates
+
+Installed builds look for a new release at start and every four hours (turn this off in **Settings → About**). When one appears, a banner offers **Download and install**; nothing is downloaded or installed until you agree. Once it is downloaded, **Restart and install** replaces the app and starts the new version, or it is installed the next time you quit.
+
+- Your settings, state and scrollback live in your own folders (see [Configuration](#configuration)), so an update never touches them; older state files are migrated.
+- Running terminals keep running: the background service is not stopped by the update. On Windows and for the AppImage it runs from its own copy of the app, outside the install folder, because the Windows installer closes a running Senju and an AppImage disappears when it is replaced. After the update the new version reconnects to the service; if the service runs an older build, a banner offers to restart it when it suits you.
+- If a new version cannot work with the running service at all, Senju asks before restarting it, and you can keep the old version running instead.
+- AppImage and the Windows installer update themselves; the deb package asks for your password to install. macOS only updates itself when the app is code-signed, so for now the banner opens the release page there.
+
 ## Configuration
 
 Settings live in `settings.json`, which holds only what differs from the defaults (**Open settings.json** at the bottom of the settings). Every key is optional:
@@ -212,6 +221,7 @@ npm run test:ui      # drives the app with Playwright and saves screenshots to u
 npm run test:perf    # keystroke latency under heavy output, switching times
 npm run screenshots  # regenerates the README screenshots in docs/screenshots/
 npm run icons        # renders build/icon.svg into the app icons
+node scripts/update-e2e.mjs <old.AppImage> <dir>  # self-update test, see the script
 ```
 
 The code is split by process:

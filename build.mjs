@@ -19,7 +19,7 @@ const common = { bundle: true, sourcemap: true, logLevel: 'info', target: 'es202
 fs.rmSync('dist', { recursive: true, force: true });
 
 await Promise.all([
-  build({ ...common, entryPoints: { main: 'src/main/main.ts' }, outdir: 'dist', platform: 'node', format: 'cjs', external: ['electron'] }),
+  build({ ...common, entryPoints: { main: 'src/main/main.ts' }, outdir: 'dist', platform: 'node', format: 'cjs', external: ['electron', 'electron-updater'] }),
   build({ ...common, entryPoints: { preload: 'src/preload/preload.ts' }, outdir: 'dist', platform: 'node', format: 'cjs', external: ['electron'] }),
   build({ ...common, entryPoints: { daemon: 'src/daemon/main.ts' }, outdir: 'dist', platform: 'node', format: 'cjs', external: ['node-pty'] }),
   build({
