@@ -13,6 +13,19 @@ fs.mkdirSync(out, { recursive: true });
 const home = fs.mkdtempSync(path.join(os.tmpdir(), 'senju-ui-'));
 const env = { ...process.env, SENJU_HOME: home, XDG_RUNTIME_DIR: home };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+let failures = 0;
+/** Screenshots are for people to look at; failing to take one does not fail the test. */
+async function shot(name) {
+  try {
+    await page.screenshot({ path: path.join(out, name) });
+  } catch (err) {
+    console.log(`warn could not save ${name}: ${err.message.split('\n')[0]}`);
+  }
+}
+const report = (label, ok) => {
+  console.log(`${ok ? 'ok  ' : 'FAIL'} ${label}`);
+  if (!ok) failures++;
+};
 
 function daemonSend(msg) {
   return new Promise((resolve, reject) => {
@@ -28,8 +41,10 @@ function daemonSend(msg) {
 }
 
 const executable = process.env.SENJU_EXECUTABLE;
+// CI machines have no GPU; without this Chromium often cannot capture the window.
+const flags = process.env.CI ? ['--no-sandbox', '--disable-gpu'] : ['--no-sandbox'];
 const launch = () =>
-  _electron.launch(executable ? { executablePath: executable, args: ['--no-sandbox'], env } : { args: ['--no-sandbox', '.'], env });
+  _electron.launch(executable ? { executablePath: executable, args: flags, env } : { args: [...flags, '.'], env });
 // Closes the app like a user would. The daemon stays alive, which keeps
 // Playwright's own close() waiting, so wait for the process instead.
 async function quit(app) {
@@ -45,7 +60,7 @@ async function stopAll(app, page) {
 let app = await launch();
 let page = await app.firstWindow();
 await page.waitForSelector('.empty');
-await page.screenshot({ path: path.join(out, '1-empty.png') });
+await shot('1-empty.png');
 
 await daemonSend({ type: 'action', action: { type: 'createGroup', name: 'senju', cwd: process.cwd() } });
 await daemonSend({ type: 'action', action: { type: 'createGroup', name: 'scratch', cwd: os.tmpdir() } });
@@ -65,12 +80,12 @@ await page.keyboard.press('Control+Shift+N');
 await sleep(600);
 await page.keyboard.press('Control+Shift+PageUp');
 await sleep(1500);
-await page.screenshot({ path: path.join(out, '2-splits.png') });
+await shot('2-splits.png');
 
 const state = () => page.evaluate(() => window.senju.state());
 const panesOf = (node) => (node.type === 'pane' ? [node] : node.children.flatMap(panesOf));
 const active = (st) => st.groups.flatMap((g) => g.workspaces).find((w) => w.id === st.activeWorkspaceId);
-const report = (label, ok) => console.log(`${label}: ${ok}`);
+
 
 let st = await state();
 report('sidebar groups', (await page.locator('.group').count()) === 2);
@@ -126,7 +141,7 @@ await sleep(500);
 st = await state();
 const left = panesOf(active(st).root)[0];
 report('tab dragged to another pane', left.tabs.some((id) => st.terminals[id].name === 'monitor'));
-await page.screenshot({ path: path.join(out, '2b-tabs.png') });
+await shot('2b-tabs.png');
 report('one active workspace in the sidebar', (await page.locator('.workspace.active').count()) === 1);
 
 // Closing the UI keeps the daemon; a new UI gets everything back.
@@ -136,9 +151,9 @@ app = await launch();
 page = await app.firstWindow();
 await page.waitForSelector('.pane .xterm');
 await sleep(1500);
-await page.screenshot({ path: path.join(out, '3-reopened.png') });
+await shot('3-reopened.png');
 const text = await page.locator('#workspace').innerText();
-console.log(`screen kept after reopen: ${text.includes('sleep 600') && text.includes('git log')}`);
+report('screen kept after reopen', text.includes('sleep 600') && text.includes('git log'));
 
 // Stop everything, as a reboot would, and start again.
 await stopAll(app, page);
@@ -146,10 +161,12 @@ app = await launch();
 page = await app.firstWindow();
 await page.waitForSelector('.pane .xterm');
 await sleep(2500);
-await page.screenshot({ path: path.join(out, '4-restored.png') });
+await shot('4-restored.png');
 const restored = await page.locator('#workspace').innerText();
-console.log(`scrollback restored: ${restored.includes('restored')}`);
-console.log(`run again offered: ${await page.locator('.terminal-overlay.visible').count()}`);
+report('scrollback restored', restored.includes('restored'));
+report('run again offered', (await page.locator('.terminal-overlay.visible').count()) === 1);
 await stopAll(app, page);
 fs.rmSync(home, { recursive: true, force: true });
 console.log(`screenshots in ${out}`);
+console.log(failures ? `${failures} check(s) failed` : 'all checks passed');
+process.exit(failures ? 1 : 0);
