@@ -30,6 +30,9 @@ export interface SettingsContext {
   save: (patch: Partial<Settings>) => Promise<void>;
   openSettingsFile: () => void;
   openRecipesFolder: () => void;
+  /** Shows diagnostics.log in the file manager. */
+  showLogs: () => void;
+  reportIssue: () => void;
   stopAll: () => void;
   confirm: (message: string, detail: string) => Promise<boolean>;
 }
@@ -209,9 +212,24 @@ export class SettingsView {
         this.ctx.copy(rows.map(([t, v]) => `${t}: ${v}`).join('\n'));
         copy.textContent = 'Copied';
       });
-      page.append(copy, updates);
+      page.append(copy, updates, ...this.problemSection());
     });
     return page;
+  }
+
+  private problemSection(): HTMLElement[] {
+    const text = el(
+      'p',
+      'settings-hint',
+      'Senju records hangs and errors, with the system they happened on, in diagnostics.log. Attach it to your report: it holds no terminal contents, commands, user or host names, and takes at most two megabytes.',
+    );
+    const actions = el('div', 'theme-actions');
+    const show = el('button', 'button', 'Show diagnostics.log');
+    show.addEventListener('click', () => this.ctx.showLogs());
+    const report = el('button', 'button', 'Report a problem');
+    report.addEventListener('click', () => this.ctx.reportIssue());
+    actions.append(show, report);
+    return [el('h3', '', 'Problems'), text, actions];
   }
 
   private updateSection(status: UpdateStatus): HTMLElement[] {

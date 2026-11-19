@@ -7,6 +7,7 @@ import { WebLinksAddon } from '@xterm/addon-web-links';
 import type { Settings } from '../shared/settings';
 import { resolveTheme, terminalFont } from '../shared/themes';
 import { senju } from './api';
+import { countOutput, note, outputTimer, snapshotTimer, terminalName } from './perf-monitor';
 
 export interface TerminalHooks {
   /** Returns true when the key event was handled as an application shortcut. */
@@ -141,12 +142,13 @@ export class TerminalView {
 
   onSnapshot(data: string): void {
     this.term.reset();
-    this.term.write(data);
+    this.term.write(data, snapshotTimer(this.terminalId, data.length));
     this.synced = true;
   }
 
   onData(data: string): void {
-    this.term.write(data);
+    countOutput(this.terminalId, data.length);
+    this.term.write(data, outputTimer(this.terminalId));
   }
 
   fit(): void {
@@ -154,6 +156,7 @@ export class TerminalView {
     this.fitAddon.fit();
     const size = `${this.term.cols}x${this.term.rows}`;
     if (size !== this.lastSize) {
+      if (this.lastSize) note(`resize ${terminalName(this.terminalId)} ${this.lastSize} to ${size}`);
       this.lastSize = size;
       senju.send({ type: 'resize', terminalId: this.terminalId, cols: this.term.cols, rows: this.term.rows });
     }

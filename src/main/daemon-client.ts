@@ -23,12 +23,20 @@ function connectOnce(): Promise<net.Socket> {
   });
 }
 
+const LOG_MAX_BYTES = 1_000_000;
+
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function startDaemon(launch: () => Promise<DaemonLauncher>): Promise<void> {
   const { executable, script, env } = await launch();
   fs.mkdirSync(path.dirname(paths.logFile), { recursive: true });
-  const log = fs.openSync(paths.logFile, 'a');
+  // Each daemon appends to the log; the previous megabyte is kept in daemon.log.1.
+  try {
+    if (fs.statSync(paths.logFile).size > LOG_MAX_BYTES) fs.renameSync(paths.logFile, `${paths.logFile}.1`);
+  } catch {
+    // No log yet.
+  }
+  const log = fs.openSync(paths.logFile, 'a', 0o600);
   const child = spawn(executable, [script], {
     detached: true,
     // Not the app's own folder: inside an AppImage that is its mount, which must be able to go away.

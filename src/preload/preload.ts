@@ -16,12 +16,15 @@ const api = {
   clipboardRead: (type: 'clipboard' | 'selection' = 'clipboard') => ipcRenderer.invoke('clipboardRead', type) as Promise<string>,
   clipboardWrite: (text: string, type: 'clipboard' | 'selection' = 'clipboard') => ipcRenderer.send('clipboardWrite', text, type),
   openExternal: (url: string) => ipcRenderer.send('openExternal', url),
-  openConfig: (what: 'settings' | 'recipes') => ipcRenderer.send('openConfig', what),
+  openConfig: (what: 'settings' | 'recipes' | 'logs') => ipcRenderer.send('openConfig', what),
   stopAll: () => ipcRenderer.send('stopAll'),
   daemonOutdated: () => ipcRenderer.invoke('daemonOutdated') as Promise<boolean>,
   appInfo: () =>
     ipcRenderer.invoke('appInfo') as Promise<{ version: string; build: string; electron: string; chrome: string; node: string; platform: string; daemonOutdated: boolean }>,
   restartDaemon: () => ipcRenderer.send('restartDaemon'),
+  diagnose: (event: string, details: Record<string, unknown>) => ipcRenderer.send('diagnose', event, details),
+  alive: (visible: boolean) => ipcRenderer.send('alive', visible),
+  diagnoseError: (event: string, error: { name: string; message: string; stack?: string; heapMB?: number }) => ipcRenderer.send('diagnoseError', event, error),
   updateStatus: () => ipcRenderer.invoke('updateStatus') as Promise<UpdateStatus>,
   updateAction: (action: UpdateAction) => ipcRenderer.send('updateAction', action),
   onUpdate: (callback: (status: UpdateStatus) => void) => {

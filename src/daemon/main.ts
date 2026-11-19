@@ -8,6 +8,7 @@ import path from 'node:path';
 import { PROTOCOL_VERSION, type Action, type ClientMessage, type DaemonMessage } from '../shared/protocol';
 import { BUILD_ID } from '../shared/build';
 import { paths } from '../shared/paths';
+import { diagnose, diagnoseError, systemInfo, watchEventLoop } from '../shared/diagnostics';
 import { loadSettings, type Settings } from '../shared/settings';
 import type { AppState, JobState, TerminalState } from '../shared/types';
 import { baseEnv, BUSY_MS, TerminalSession } from './terminal';
@@ -33,6 +34,20 @@ const EXIT_GRACE_MS = 3000;
 function repeat(task: () => Promise<void>, ms: number): void {
   const next = () => setTimeout(() => void task().catch((err) => log('periodic task failed', err)).finally(next), ms);
   next();
+}
+
+// Thresholds for diagnostics.log (shared/diagnostics.ts).
+const BLOCKED_MS = 200;
+const SLOW_POLL_MS = 1000;
+/** Output of one terminal in one second that is logged as a burst, such as an agent printing its conversation again. */
+const OUTPUT_BURST = 1024 * 1024;
+
+/** Runs a task and logs it to diagnostics.log when it took `thresholdMs` or more. */
+async function logIfSlow(name: string, thresholdMs: number, task: () => Promise<void>): Promise<void> {
+  const started = performance.now();
+  await task();
+  const ms = performance.now() - started;
+  if (ms >= thresholdMs) diagnose('daemon', `slow ${name}`, { ms: Math.round(ms) });
 }
 
 function log(...args: unknown[]): void {
@@ -126,13 +141,54 @@ class Daemon {
     for (const id of Object.keys(this.state.terminals)) this.spawn(id, true, present);
     this.saveNow();
     this.listen();
-    repeat(() => this.pollProcesses(), POLL_MS);
-    repeat(() => this.pollSessions(), SESSION_POLL_MS);
+    repeat(() => logIfSlow('process poll', SLOW_POLL_MS, () => this.pollProcesses()), POLL_MS);
+    repeat(() => logIfSlow('session poll', SLOW_POLL_MS, () => this.pollSessions()), SESSION_POLL_MS);
     repeat(() => this.persistScrollback(), SCROLLBACK_TICK_MS);
+    this.watchOutput();
+    watchEventLoop('daemon', BLOCKED_MS, () => ({ busiest: this.busiest() }));
+    const terminals = Object.values(this.state.terminals);
+    diagnose('daemon', 'start', { build: BUILD_ID, ...systemInfo(), terminals: terminals.length, agents: terminals.filter((t) => t.job?.recipe).length });
     for (const signal of ['SIGTERM', 'SIGINT', 'SIGHUP'] as const) {
       process.on(signal, () => void this.shutdown(false));
     }
     log(`daemon ${process.pid} started with ${this.sessions.size} terminals`);
+  }
+
+  /** Output of each terminal in each of the last seconds, for diagnostics.log. */
+  private readonly outputSeconds: Map<string, number>[] = [];
+  private readonly outputSeen = new Map<string, number>();
+
+  private watchOutput(): void {
+    setInterval(() => {
+      const second = new Map<string, number>();
+      for (const [id, session] of this.sessions) {
+        const printed = session.outputBytes - (this.outputSeen.get(id) ?? 0);
+        this.outputSeen.set(id, session.outputBytes);
+        if (printed > 0) second.set(id, printed);
+        if (printed >= OUTPUT_BURST) diagnose('daemon', 'output burst', { terminal: this.describe(id), kb: Math.round(printed / 1024) });
+      }
+      for (const id of this.outputSeen.keys()) if (!this.sessions.has(id)) this.outputSeen.delete(id);
+      this.outputSeconds.push(second);
+      if (this.outputSeconds.length > 5) this.outputSeconds.shift();
+    }, 1000).unref();
+  }
+
+  /** The terminals that printed the most in the last seconds. */
+  private busiest(): { terminal: string; kbPerSecond: number }[] {
+    const total = new Map<string, number>();
+    for (const second of this.outputSeconds) for (const [id, n] of second) total.set(id, (total.get(id) ?? 0) + n);
+    const seconds = Math.max(1, this.outputSeconds.length);
+    return [...total]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3)
+      .map(([id, n]) => ({ terminal: this.describe(id), kbPerSecond: Math.round(n / seconds / 1024) }));
+  }
+
+  /** A terminal as diagnostics.log names it: its id and its tab name, agent or program. */
+  private describe(id: string): string {
+    const terminal = this.state.terminals[id];
+    const what = terminal?.name || terminal?.job?.recipe || terminal?.job?.argv[0]?.split('/').pop() || 'shell';
+    return `${id} ${what}`;
   }
 
   /** Drops terminals that no tab refers to and fills in terminals a tab refers to but lacks. */
@@ -621,7 +677,13 @@ function closeInheritedAppFiles(): void {
 }
 
 closeInheritedAppFiles();
-process.on('uncaughtException', (err) => log('uncaught exception', err));
-process.on('unhandledRejection', (err) => log('unhandled rejection', err));
+process.on('uncaughtException', (err) => {
+  log('uncaught exception', err);
+  diagnoseError('daemon', 'uncaught exception', err);
+});
+process.on('unhandledRejection', (err) => {
+  log('unhandled rejection', err);
+  diagnoseError('daemon', 'unhandled rejection', err);
+});
 
 void ensureSingleInstance().then(() => new Daemon().start());

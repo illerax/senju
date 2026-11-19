@@ -23,6 +23,9 @@ import { Keymap, type Command } from './keymap';
 import { showMenu, type MenuItem } from './menu';
 import { SettingsView } from './settings-view';
 import { TerminalView } from './terminal-view';
+import { measureSwitch, nameTerminals, note, report, startPerfMonitor, terminalName } from './perf-monitor';
+
+const SLOW_RENDER_MS = 100;
 
 type UiMessage = DaemonMessage | { type: 'connected'; outdated: boolean };
 
@@ -65,7 +68,23 @@ function refreshTips(): void {
 }
 
 function act(action: Action): void {
+  trackSwitch(action);
   senju.send({ type: 'action', action });
+}
+
+/** A switch sent to the daemon, timed until the window shows it (perf-monitor.ts). */
+let pendingSwitch: { what: string; at: number; shown: () => boolean } | null = null;
+
+function trackSwitch(action: Action): void {
+  const at = performance.now();
+  if (action.type === 'activateWorkspace') {
+    const name = state.groups.flatMap((g) => g.workspaces).find((w) => w.id === action.workspaceId)?.name;
+    pendingSwitch = { what: `switch to workspace ${name}`, at, shown: () => state.activeWorkspaceId === action.workspaceId };
+  } else if (action.type === 'activateTab') {
+    pendingSwitch = { what: `switch to tab ${terminalName(action.terminalId)}`, at, shown: () => focusedPane()?.activeTab === action.terminalId };
+  } else if (action.type === 'focusPane') {
+    pendingSwitch = { what: 'switch pane', at, shown: () => activeContext()?.workspace.focusedPaneId === action.paneId };
+  }
 }
 
 // --- state helpers ---
@@ -929,6 +948,7 @@ function newGroup(): void {
 }
 
 async function runCommand(command: Command): Promise<void> {
+  note(`command ${command}`);
   const ctx = activeContext();
   const pane = focusedPane();
   const split = (side: SplitSide) => pane && act({ type: 'splitPane', paneId: pane.id, side });
@@ -1088,7 +1108,16 @@ function onMessage(msg: UiMessage): void {
           terminals.delete(id);
         }
       }
+      const started = performance.now();
       render();
+      const ms = performance.now() - started;
+      if (ms >= SLOW_RENDER_MS) report('slow render', { ms: Math.round(ms), terminals: Object.keys(state.terminals).length });
+      if (pendingSwitch?.shown()) {
+        measureSwitch(pendingSwitch.what, pendingSwitch.at);
+        pendingSwitch = null;
+      } else if (pendingSwitch && performance.now() - pendingSwitch.at > 10_000) {
+        pendingSwitch = null;
+      }
       break;
     }
     case 'snapshot':
@@ -1182,6 +1211,12 @@ function applySettings(next: Settings): void {
 }
 
 async function main(): Promise<void> {
+  startPerfMonitor();
+  // Not by folder, as tabs without a name are: the home folder is the user's name.
+  nameTerminals((id) => {
+    const terminal = state?.terminals[id];
+    return terminal?.name || (terminal?.job?.argv.length ? programName(terminal.job.argv) : 'shell');
+  });
   [settings, platform, home] = await Promise.all([senju.settings(), senju.platform(), senju.homedir()]);
   document.body.classList.add(`platform-${platform}`);
   applySettings(settings);
@@ -1195,6 +1230,8 @@ async function main(): Promise<void> {
     copy: (text) => senju.clipboardWrite(text),
     openSettingsFile: () => senju.openConfig('settings'),
     openRecipesFolder: () => senju.openConfig('recipes'),
+    showLogs: () => senju.openConfig('logs'),
+    reportIssue: () => senju.openExternal('https://github.com/illerax/senju/issues/new'),
     stopAll: async () => {
       const ok = await confirmDialog({
         title: 'Quit and stop all processes?',
