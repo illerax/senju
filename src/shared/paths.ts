@@ -39,6 +39,10 @@ export const paths = {
   get logFile() {
     return path.join(baseDirs().state, 'daemon.log');
   },
+  /** Slow moments and errors of the daemon, the main process and the window, with the system they ran on (diagnostics.ts). */
+  get diagnosticsFile() {
+    return path.join(baseDirs().state, 'diagnostics.log');
+  },
   get runtimeDir() {
     return baseDirs().runtime;
   },

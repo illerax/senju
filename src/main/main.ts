@@ -7,10 +7,11 @@ import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, screen, shell, ty
 import type { ClientMessage, DaemonMessage } from '../shared/protocol';
 import { BUILD_ID } from '../shared/build';
 import { paths } from '../shared/paths';
-import { loadSettings, resolveTheme, saveSettings, type Settings } from '../shared/settings';
+import { loadSettings, resolveFont, resolveTheme, saveSettings, type Settings } from '../shared/settings';
 import type { AppState, UiState } from '../shared/types';
 import { DaemonClient, DaemonReplaceDeclined } from './daemon-client';
 import { daemonLauncher } from './daemon-runtime';
+import { diagnose, diagnoseError, systemInfo, watchEventLoop } from '../shared/diagnostics';
 import { Updater } from './updater';
 import type { UpdateAction } from '../shared/update';
 
@@ -87,8 +88,63 @@ function createWindow(): void {
   win.on('closed', () => {
     win = null;
   });
+  watchWindow(win);
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   win.webContents.on('will-navigate', (e) => e.preventDefault());
+}
+
+/** A visible window that sent no heartbeat (perf-monitor.ts) for this long is hung. */
+const HUNG_MS = 5000;
+
+/** Logs a window that stops responding, even one that never recovers, and why its renderer process ended. */
+function watchWindow(window: BrowserWindow): void {
+  let alive = Date.now();
+  let visible = true;
+  let hungSince = 0;
+  const onAlive = (e: Electron.IpcMainEvent, isVisible: boolean) => {
+    if (e.sender !== window.webContents) return;
+    if (hungSince) diagnose('main', 'window responding again', { afterMs: Date.now() - hungSince });
+    alive = Date.now();
+    visible = isVisible;
+    hungSince = 0;
+  };
+  ipcMain.on('alive', onAlive);
+  let tick = Date.now();
+  const timer = setInterval(() => {
+    const now = Date.now();
+    // A late tick means this process stood still too (the system slept, say), not the window.
+    if (now - tick > 3000) alive = now;
+    tick = now;
+    if (hungSince || !visible || now - alive < HUNG_MS) return;
+    hungSince = alive;
+    diagnose('main', 'window not responding', { silentMs: now - alive });
+  }, 1000);
+  window.on('closed', () => {
+    clearInterval(timer);
+    ipcMain.off('alive', onAlive);
+  });
+  window.webContents.on('render-process-gone', (_e, details) => {
+    if (details.reason !== 'clean-exit') diagnose('main', 'window process gone', { ...details });
+  });
+  window.webContents.on('preload-error', (_e, _path, error) => diagnoseError('main', 'preload error', error));
+}
+
+/** The start entry of the main process: the app, the system and what draws the window. */
+async function diagnoseStart(): Promise<void> {
+  const gpu = (await app.getGPUInfo('basic').catch(() => null)) as { gpuDevice?: { vendorId: number; deviceId: number; active?: boolean; driverVendor?: string; driverVersion?: string }[] } | null;
+  const settings = loadSettings();
+  diagnose('main', 'start', {
+    version: app.getVersion(),
+    build: BUILD_ID,
+    ...systemInfo(),
+    chrome: process.versions.chrome,
+    installed: process.env.APPIMAGE ? 'AppImage' : app.isPackaged ? 'package' : 'source',
+    session: process.platform === 'linux' ? `${process.env.XDG_SESSION_TYPE ?? '?'} ${process.env.XDG_CURRENT_DESKTOP ?? '?'}` : undefined,
+    displays: screen.getAllDisplays().map((d) => `${d.size.width}x${d.size.height}@${d.scaleFactor}`),
+    gpu: gpu?.gpuDevice?.map((d) => ({ vendor: d.vendorId.toString(16), device: d.deviceId.toString(16), active: d.active, driver: [d.driverVendor, d.driverVersion].filter(Boolean).join(' ') || undefined })),
+    gpuFeatures: app.getGPUFeatureStatus(),
+    settings: { theme: settings.theme, ...resolveFont(settings), zoom: settings.zoom, scrollback: settings.scrollback, persistedScrollback: settings.persistedScrollback },
+  });
 }
 
 function buildMenu(): void {
@@ -146,8 +202,11 @@ function registerIpc(): void {
   ipcMain.on('openExternal', (_e, url: string) => {
     if (/^https?:\/\//.test(url)) void shell.openExternal(url);
   });
-  ipcMain.on('openConfig', (_e, what: 'settings' | 'recipes') => {
-    if (what === 'settings') {
+  ipcMain.on('openConfig', (_e, what: 'settings' | 'recipes' | 'logs') => {
+    if (what === 'logs') {
+      if (fs.existsSync(paths.diagnosticsFile)) shell.showItemInFolder(paths.diagnosticsFile);
+      else void shell.openPath(path.dirname(paths.diagnosticsFile));
+    } else if (what === 'settings') {
       ensureSettingsFile();
       void shell.openPath(paths.settingsFile);
     } else {
@@ -167,6 +226,8 @@ function registerIpc(): void {
     daemonOutdated: daemon.outdated,
   }));
   ipcMain.on('restartDaemon', () => daemon.restartDaemon());
+  ipcMain.on('diagnose', (_e, event: string, details: Record<string, unknown>) => diagnose('window', String(event), details));
+  ipcMain.on('diagnoseError', (_e, event: string, error: { heapMB?: number }) => diagnoseError('window', String(event), error, { heapMB: error?.heapMB }));
   ipcMain.handle('updateStatus', () => updater.current);
   ipcMain.on('updateAction', (_e, action: UpdateAction) => {
     if (action === 'check') void updater.check();
@@ -181,6 +242,12 @@ function registerIpc(): void {
     if (action === 'dismiss') updater.dismiss();
   });
 }
+
+process.on('uncaughtExceptionMonitor', (err) => diagnoseError('main', 'uncaught exception', err));
+process.on('unhandledRejection', (err) => {
+  console.error('unhandled rejection', err);
+  diagnoseError('main', 'unhandled rejection', err);
+});
 
 // An isolated home (used by tests) gets its own browser profile and single-instance lock.
 if (process.env.SENJU_HOME) app.setPath('userData', path.join(process.env.SENJU_HOME, 'electron'));
@@ -209,6 +276,11 @@ if (!app.requestSingleInstanceLock()) {
   daemon.on('declined', () => app.quit());
 
   void app.whenReady().then(async () => {
+    watchEventLoop('main', 200);
+    void diagnoseStart();
+    app.on('child-process-gone', (_e, details) => {
+      if (details.reason !== 'clean-exit') diagnose('main', 'process gone', { ...details });
+    });
     buildMenu();
     registerIpc();
     try {

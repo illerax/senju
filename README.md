@@ -196,6 +196,17 @@ Changes in the settings page apply right away; edits to the file apply when the 
 
 `SENJU_HOME` replaces all of these with one folder, which is handy for testing.
 
+### When Senju is slow or fails
+
+`diagnostics.log` in the state folder records, one JSON object per line:
+- each start of the app and of the background service, with the system they run on: version, OS, desktop session, CPU, memory, displays, GPU and whether drawing is accelerated, and the font settings;
+- slow moments as they happen: the window not drawing or not responding (`no frames`, `blocked`, `long task`, `window not responding`), a slow switch between tabs, panes or workspaces, a terminal whose output piles up faster than it is drawn, the background service or the main process being blocked, or a terminal printing a burst of output;
+- errors in the window, the main process and the background service, and crashed processes.
+
+Each slow moment lists what happened in the seconds before and the terminals that printed the most, named by their tab; every entry carries the system load and free memory. The log holds no terminal contents, commands, user names or host names. **Show diagnostics.log** on the About page of the settings opens its folder; attach the file when reporting a hang or an error (**Report a problem** opens a new issue).
+
+Logs don't grow without bound: a log over a megabyte moves to `diagnostics.log.1` (or `daemon.log.1`), replacing the previous one, so each takes at most two megabytes. `daemon.log` holds the background service's own messages, including the commands it restores terminals with; it is not meant to be sent.
+
 ## Agent recipes
 
 A recipe tells Senju how to recognise an agent, how to find its session id and how to reopen it. The built-in ones are in [`recipes/`](recipes). To add an agent or change a built-in one, put a JSON file into the recipes folder (**Open agent recipes folder** at the bottom of the settings); a recipe with the name of a built-in one replaces it.

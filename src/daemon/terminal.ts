@@ -8,6 +8,7 @@ import { Terminal } from '@xterm/headless';
 import { SerializeAddon } from '@xterm/addon-serialize';
 import { Unicode11Addon } from '@xterm/addon-unicode11';
 import { withoutAppImagePaths } from '../shared/env';
+import { diagnose } from '../shared/diagnostics';
 import type { Settings } from '../shared/settings';
 
 export interface TerminalOptions {
@@ -24,6 +25,9 @@ export interface TerminalOptions {
   initialCommand?: string;
   onExit: () => void;
 }
+
+/** Serializing a screen slower than this is logged to diagnostics.log. */
+const SLOW_SERIALIZE_MS = 100;
 
 const restoredBanner = '\r\n\x1b[0m\x1b[2m──── restored ────\x1b[0m\r\n';
 
@@ -63,6 +67,8 @@ export class TerminalSession {
   private readonly listeners = new Set<(data: string) => void>();
   /** Time of the last output, used to tell apart agents sharing a directory. */
   lastActivity = 0;
+  /** Characters of output so far, for finding terminals that print the most. */
+  outputBytes = 0;
   /** Time of the last output that was the program's own work, not an echo of input. */
   workedAt = 0;
   /** Called on every output counted as work. */
@@ -115,6 +121,7 @@ export class TerminalSession {
     this.pty.onData((data) => {
       const now = Date.now();
       this.lastActivity = now;
+      this.outputBytes += data.length;
       // While busy every output counts, so typing ahead does not end the work.
       if (now - this.inputAt > ECHO_MS || now - this.workedAt < BUSY_MS) {
         this.workedAt = now;
@@ -169,7 +176,11 @@ export class TerminalSession {
     const listener = (data: string) => (ready ? onData(data) : buffered.push(data));
     this.listeners.add(listener);
     this.term.write('', () => {
-      onSnapshot(this.serializer.serialize());
+      const started = performance.now();
+      const snapshot = this.serializer.serialize();
+      const ms = performance.now() - started;
+      if (ms >= SLOW_SERIALIZE_MS) diagnose('daemon', 'slow snapshot', { terminal: this.id, ms: Math.round(ms), kb: Math.round(snapshot.length / 1024) });
+      onSnapshot(snapshot);
       for (const chunk of buffered) onData(chunk);
       buffered.length = 0;
       ready = true;
@@ -183,7 +194,11 @@ export class TerminalSession {
       this.term.write('', () => {
         this.dirty = false;
         this.persistedAt = Date.now();
-        resolve(this.serializer.serialize({ scrollback: lines, excludeAltBuffer: true, excludeModes: true }));
+        const started = performance.now();
+        const scrollback = this.serializer.serialize({ scrollback: lines, excludeAltBuffer: true, excludeModes: true });
+        const ms = performance.now() - started;
+        if (ms >= SLOW_SERIALIZE_MS) diagnose('daemon', 'slow scrollback save', { terminal: this.id, ms: Math.round(ms), kb: Math.round(scrollback.length / 1024) });
+        resolve(scrollback);
       });
     });
   }

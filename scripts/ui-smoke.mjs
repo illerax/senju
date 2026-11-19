@@ -203,6 +203,23 @@ for (const key of ['PageDown', 'PageDown', 'PageUp', 'PageUp', 'PageDown']) {
 report(`workspace moves down, stops at the end, moves up into the previous group and back (${moves.join(' ')})`, moves.join(' ') === 'scratch:1 scratch:1 scratch:0 senju:1 scratch:0');
 report('the moved workspace stays active', (await state()).activeWorkspaceId === moving);
 
+// About: the diagnostics log can be found from the settings, to send it with a report.
+await page.click('#open-settings');
+await page.locator('.settings-nav-item', { hasText: 'About' }).click();
+await page.locator('button', { hasText: 'Show diagnostics.log' }).waitFor();
+await app.evaluate(({ shell }) => {
+  globalThis.__shown = [];
+  shell.showItemInFolder = (file) => globalThis.__shown.push(file);
+  shell.openPath = async (file) => (globalThis.__shown.push(file), '');
+});
+await shot('2c-about.png');
+await page.locator('button', { hasText: 'Show diagnostics.log' }).click();
+await sleep(300);
+const shown = await app.evaluate(() => globalThis.__shown);
+report(`about shows diagnostics.log (${shown.map((f) => path.basename(f)).join(', ')})`, shown.length === 1 && path.basename(shown[0]) === 'diagnostics.log');
+await page.keyboard.press('Escape');
+await sleep(300);
+
 // Closing the UI keeps the daemon; a new UI gets everything back.
 await quit(app);
 await sleep(500);
