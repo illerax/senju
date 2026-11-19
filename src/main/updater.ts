@@ -3,13 +3,14 @@
 // state live in the user's folders, and the daemon keeps the terminals
 // running (see daemon-runtime.ts), so an update never interrupts work.
 
-import { app, shell } from 'electron';
+import { app, net, shell } from 'electron';
 import { autoUpdater, type ProgressInfo, type UpdateInfo } from 'electron-updater';
-import type { UpdateStatus } from '../shared/update';
+import { isNewerVersion, type UpdateStatus } from '../shared/update';
 
 const FIRST_CHECK_MS = 10_000;
 const CHECK_EVERY_MS = 4 * 60 * 60 * 1000;
 const RELEASES = 'https://github.com/illerax/senju/releases';
+const LATEST_RELEASE_API = 'https://api.github.com/repos/illerax/senju/releases/latest';
 
 export class Updater {
   private status: UpdateStatus = { state: 'idle' };
@@ -53,7 +54,7 @@ export class Updater {
         this.set({ state: 'current', checkedAt: Date.now() });
         return;
       }
-      this.set({ state: 'available', version: info.version, url: `${RELEASES}/tag/v${info.version}`, manual: this.manual });
+      this.offer(info.version);
     });
     autoUpdater.on('download-progress', (progress: ProgressInfo) => {
       if (this.status.state === 'downloading' || this.status.state === 'available') {
@@ -75,6 +76,10 @@ export class Updater {
     return this.status;
   }
 
+  private offer(version: string): void {
+    this.set({ state: 'available', version, url: `${RELEASES}/tag/v${version}`, manual: this.manual });
+  }
+
   private set(status: UpdateStatus): void {
     this.status = status;
     this.onStatus(status);
@@ -85,10 +90,27 @@ export class Updater {
     // Do not interrupt a download or a ready update.
     if (this.status.state === 'downloading' || this.status.state === 'ready') return;
     try {
-      await autoUpdater.checkForUpdates();
+      if (this.manual && !process.env.SENJU_UPDATE_URL) await this.checkRelease();
+      else await autoUpdater.checkForUpdates();
     } catch (err) {
       this.set({ state: 'error', message: String((err as Error).message ?? err).split('\n')[0] });
     }
+  }
+
+  /**
+   * Where the app cannot update itself, only the version of the latest release
+   * matters: electron-updater would also need update metadata (latest-mac.yml)
+   * that only exists for self-updating builds.
+   */
+  private async checkRelease(): Promise<void> {
+    this.set({ state: 'checking' });
+    const response = await net.fetch(LATEST_RELEASE_API, { headers: { Accept: 'application/vnd.github+json' } });
+    if (!response.ok) throw new Error(`GitHub answered ${response.status} ${response.statusText}`);
+    const release = (await response.json()) as { tag_name?: string };
+    const version = release.tag_name?.replace(/^v/, '');
+    if (!version) throw new Error('The latest release has no version tag');
+    if (isNewerVersion(version, app.getVersion()) && this.dismissed !== version) this.offer(version);
+    else this.set({ state: 'current', checkedAt: Date.now() });
   }
 
   /** The user approved: download the update, or open its release page where the app cannot update itself. */

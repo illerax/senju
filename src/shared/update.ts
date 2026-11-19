@@ -11,3 +11,14 @@ export type UpdateStatus =
   | { state: 'error'; message: string };
 
 export type UpdateAction = 'check' | 'download' | 'install' | 'dismiss';
+
+/** Whether release `candidate` is newer than `current`; both are "x.y.z", optionally with a "v" and a pre-release suffix. */
+export function isNewerVersion(candidate: string, current: string): boolean {
+  const parse = (v: string) => v.replace(/^v/, '').split(/[-+]/)[0].split('.').map((n) => Number.parseInt(n, 10) || 0);
+  const a = parse(candidate);
+  const b = parse(current);
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    if ((a[i] ?? 0) !== (b[i] ?? 0)) return (a[i] ?? 0) > (b[i] ?? 0);
+  }
+  return false;
+}
