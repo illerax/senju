@@ -10,7 +10,7 @@ import { BUILD_ID } from '../shared/build';
 import { paths } from '../shared/paths';
 import { loadSettings, type Settings } from '../shared/settings';
 import type { AppState, JobState, TerminalState } from '../shared/types';
-import { baseEnv, TerminalSession } from './terminal';
+import { baseEnv, BUSY_MS, TerminalSession } from './terminal';
 import { inspectTerminals, type ProcessInfo } from './procinfo';
 import { listSessions, loadRecipes, matchRecipe, requiredFiles, sessionFromArgs, sessionFromPidFile, type Recipe } from './recipes';
 import { planRestore } from './restore';
@@ -20,8 +20,6 @@ import { applyAction, closeTerminal, type Effects } from './workspace';
 import { terminalIds } from '../shared/layout';
 
 const POLL_MS = 1000;
-/** Output within this time marks a program as busy rather than waiting. */
-const BUSY_MS = 3000;
 const SESSION_POLL_MS = 2000;
 /** How often one terminal's scrollback may be saved; one at a time keeps each pause short. */
 const SCROLLBACK_TICK_MS = 3000;
@@ -94,6 +92,8 @@ interface Tracked {
   /** Pid of the process a recipe matched, which may be a child of the leader. */
   agentPid?: number;
   jobGone?: NodeJS.Timeout;
+  /** Ends the busy state once the job has been quiet for BUSY_MS. */
+  quiet?: NodeJS.Timeout;
   shellEnv?: Record<string, string>;
 }
 
@@ -172,6 +172,13 @@ class Daemon {
       initialCommand: command,
       onExit: () => this.onShellExit(terminalId, session),
     });
+    session.onWork = () => {
+      const job = this.state.terminals[terminalId]?.job;
+      if (job && !this.state.terminals[terminalId].busy && this.sessions.get(terminalId) === session) {
+        this.setBusy(terminalId, session, true);
+        this.changed();
+      }
+    };
     this.sessions.set(terminalId, session);
     this.tracked.set(terminalId, {});
     if (command) log(`terminal ${terminalId}: restoring with \`${command}\``);
@@ -200,6 +207,7 @@ class Daemon {
     this.sessions.delete(terminalId);
     const tracked = this.tracked.get(terminalId);
     if (tracked?.jobGone) clearTimeout(tracked.jobGone);
+    if (tracked?.quiet) clearTimeout(tracked.quiet);
     this.tracked.delete(terminalId);
     for (const client of this.clients) {
       client.detach.get(terminalId)?.();
@@ -252,9 +260,9 @@ class Daemon {
           changed = true;
         }
 
-        const busy = info.job ? Date.now() - session.lastActivity < BUSY_MS : undefined;
+        const busy = info.job ? Date.now() - session.workedAt < BUSY_MS : undefined;
         if (terminal.busy !== busy) {
-          terminal.busy = busy;
+          this.setBusy(terminalId, session, busy);
           changed = true;
         }
 
@@ -294,6 +302,32 @@ class Daemon {
       }),
     );
     if (changed) this.changed();
+  }
+
+  /**
+   * Marks a job as busy or waiting. A busy job is marked waiting as soon as it
+   * has been quiet for BUSY_MS, not at the next poll.
+   */
+  private setBusy(terminalId: string, session: TerminalSession, busy: boolean | undefined): void {
+    const terminal = this.state.terminals[terminalId];
+    const tracked = this.tracked.get(terminalId);
+    if (!terminal || !tracked) return;
+    terminal.busy = busy;
+    if (tracked.quiet) clearTimeout(tracked.quiet);
+    tracked.quiet = undefined;
+    if (!busy) return;
+    const check = () => {
+      tracked.quiet = undefined;
+      if (this.shuttingDown || this.sessions.get(terminalId) !== session || !terminal.busy) return;
+      const left = session.workedAt + BUSY_MS - Date.now();
+      if (left > 0) {
+        tracked.quiet = setTimeout(check, left);
+        return;
+      }
+      terminal.busy = false;
+      this.changed();
+    };
+    tracked.quiet = setTimeout(check, Math.max(0, session.workedAt + BUSY_MS - Date.now()));
   }
 
   private async describeJob(leader: ProcessInfo, children: ProcessInfo[], shellEnv: Record<string, string> | null | undefined) {

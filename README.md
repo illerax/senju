@@ -28,7 +28,7 @@ Close the window, crash it, update it or reboot the computer: the layout, the ta
 
 **See what your agents are doing**
 
-- Every agent is marked **working** while it prints output and **waiting** when it has gone quiet and needs you.
+- Every agent is marked **working** while it prints output and **waiting** once it has been quiet for a second and a half and needs you. What it shows in reply to your typing or a resize does not count as work.
 - The sidebar shows the state per workspace, tabs mark it with ▸, and the status bar lists the agents of the current workspace and every other workspace that waits for input — click one to jump there.
 
 **Never lose a session**
