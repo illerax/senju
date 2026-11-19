@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.1.5](https://github.com/illerax/senju/compare/v0.1.4...v0.1.5) (2026-11-19)
+
+
+### Features
+
+* zoom terminals with shortcuts and Ctrl+mouse wheel ([#20](https://github.com/illerax/senju/issues/20)) ([ef9acaa](https://github.com/illerax/senju/commit/ef9acaa02134dd566562a4dc1d62952c62e2cf18))
+
+
+### Bug Fixes
+
+* open OSC 8 hyperlinks with Ctrl+click instead of a confirmation dialog ([#17](https://github.com/illerax/senju/issues/17)) ([f5c8250](https://github.com/illerax/senju/commit/f5c825021d0ffedf69619a524db8c70848c14a14))
+* open the installed fonts list from the font field in settings ([#19](https://github.com/illerax/senju/issues/19)) ([996ee6f](https://github.com/illerax/senju/commit/996ee6f933cde2c7b9cafbad6155ecabd194863b))
+
 ## [0.1.4](https://github.com/illerax/senju/compare/v0.1.3...v0.1.4) (2026-11-19)
 
 
