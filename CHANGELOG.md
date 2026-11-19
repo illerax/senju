@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.1.6](https://github.com/illerax/senju/compare/v0.1.5...v0.1.6) (2026-11-19)
+
+
+### Features
+
+* let the macOS app update itself without code signing ([#24](https://github.com/illerax/senju/issues/24)) ([dde9c1e](https://github.com/illerax/senju/commit/dde9c1e97b3362dca3564df059253dad1400ba7f))
+* zoom each tab on its own, on top of the zoom of all terminals ([#23](https://github.com/illerax/senju/issues/23)) ([edfcbc2](https://github.com/illerax/senju/commit/edfcbc2adaa0622b9164f8f57d41f543cda504e3))
+
+
+### Bug Fixes
+
+* keep mouse reports from spoiling a restored command after a daemon restart ([#21](https://github.com/illerax/senju/issues/21)) ([c0a57ed](https://github.com/illerax/senju/commit/c0a57ed89bdd546f567b6d8d1e9c43bd06898581))
+
 ## [0.1.5](https://github.com/illerax/senju/compare/v0.1.4...v0.1.5) (2026-11-19)
 
 
