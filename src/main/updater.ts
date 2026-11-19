@@ -4,11 +4,19 @@
 // running (see daemon-runtime.ts), so an update never interrupts work.
 
 import { app, net, shell } from 'electron';
+import { CancellationToken } from 'builder-util-runtime';
 import { autoUpdater, type ProgressInfo, type UpdateInfo } from 'electron-updater';
 import { isNewerVersion, type UpdateStatus } from '../shared/update';
 
 const FIRST_CHECK_MS = 10_000;
 const CHECK_EVERY_MS = 4 * 60 * 60 * 1000;
+/**
+ * How long a check may wait for an answer and a download for more data. On a
+ * connection that went dead without closing, requests through Electron's net
+ * never time out on their own, and electron-updater would hand every later
+ * check the hung one. Tests shorten it.
+ */
+const STALL_MS = Number(process.env.SENJU_UPDATE_STALL_MS) || 60_000;
 const RELEASES = 'https://github.com/illerax/senju/releases';
 const LATEST_RELEASE_API = 'https://api.github.com/repos/illerax/senju/releases/latest';
 
@@ -17,6 +25,8 @@ export class Updater {
   /** A version the user said "Later" to; it is not offered again until a newer one appears. */
   private dismissed: string | null = null;
   private timer: NodeJS.Timeout | null = null;
+  /** Cancels the download when no data arrived for STALL_MS. */
+  private stallTimer: NodeJS.Timeout | null = null;
 
   constructor(
     private readonly onStatus: (status: UpdateStatus) => void,
@@ -58,6 +68,7 @@ export class Updater {
     });
     autoUpdater.on('download-progress', (progress: ProgressInfo) => {
       if (this.status.state === 'downloading' || this.status.state === 'available') {
+        this.stallTimer?.refresh();
         this.set({ state: 'downloading', version: this.status.version, percent: Math.round(progress.percent) });
       }
     });
@@ -91,7 +102,7 @@ export class Updater {
     if (this.status.state === 'downloading' || this.status.state === 'ready') return;
     try {
       if (this.manual && !process.env.SENJU_UPDATE_URL) await this.checkRelease();
-      else await autoUpdater.checkForUpdates();
+      else await this.withinStall(autoUpdater.checkForUpdates());
     } catch (err) {
       this.set({ state: 'error', message: String((err as Error).message ?? err).split('\n')[0] });
     }
@@ -104,7 +115,7 @@ export class Updater {
    */
   private async checkRelease(): Promise<void> {
     this.set({ state: 'checking' });
-    const response = await net.fetch(LATEST_RELEASE_API, { headers: { Accept: 'application/vnd.github+json' } });
+    const response = await net.fetch(LATEST_RELEASE_API, { headers: { Accept: 'application/vnd.github+json' }, signal: AbortSignal.timeout(STALL_MS) });
     if (!response.ok) throw new Error(`GitHub answered ${response.status} ${response.statusText}`);
     const release = (await response.json()) as { tag_name?: string };
     const version = release.tag_name?.replace(/^v/, '');
@@ -121,10 +132,40 @@ export class Updater {
       return;
     }
     this.set({ state: 'downloading', version: this.status.version, percent: 0 });
+    const cancel = new CancellationToken();
+    let stalled = false;
+    this.stallTimer = setTimeout(() => {
+      stalled = true;
+      cancel.cancel();
+    }, STALL_MS);
     try {
-      await autoUpdater.downloadUpdate();
+      await autoUpdater.downloadUpdate(cancel);
     } catch (err) {
-      this.set({ state: 'error', message: String((err as Error).message ?? err).split('\n')[0] });
+      const message = stalled ? 'The download stopped: no data from the update server' : String((err as Error).message ?? err).split('\n')[0];
+      this.set({ state: 'error', message });
+    } finally {
+      if (this.stallTimer) clearTimeout(this.stallTimer);
+      this.stallTimer = null;
+    }
+  }
+
+  /**
+   * Gives up on a check that got no answer. electron-updater keeps the pending
+   * check and returns it to every later call, so it is dropped to let the next
+   * check start over.
+   */
+  private async withinStall<T>(check: Promise<T>): Promise<T> {
+    let timer: NodeJS.Timeout | undefined;
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => {
+        (autoUpdater as unknown as { checkForUpdatesPromise: unknown }).checkForUpdatesPromise = null;
+        reject(new Error('No answer from the update server'));
+      }, STALL_MS);
+    });
+    try {
+      return await Promise.race([check, timeout]);
+    } finally {
+      clearTimeout(timer);
     }
   }
 
@@ -140,5 +181,6 @@ export class Updater {
 
   stop(): void {
     if (this.timer) clearTimeout(this.timer);
+    if (this.stallTimer) clearTimeout(this.stallTimer);
   }
 }

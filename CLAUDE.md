@@ -17,6 +17,7 @@ Everything in this repository must be in English: code, comments, identifiers, d
 - `npm run test:daemon` — end-to-end daemon test in a throwaway `SENJU_HOME`; run it after touching `src/daemon`.
 - `npm run test:ui` — drives the app with Playwright and saves screenshots; run it after touching `src/renderer` or `src/main`, and look at the screenshots.
 - `npm run test:perf` — keystroke latency under heavy output and UI switching times; run it after changes to the daemon's hot paths or the renderer's render loop.
+- `npm run test:network` — keystroke latency while a terminal's folder is on a network share that turns slow or unreachable (`scripts/flakyfs.py`, a FUSE file system), and update checks and downloads against a server that hangs, drops or goes silent; run it after touching the updater or file system calls in the daemon. The daemon must never call the file system synchronously on a terminal's folder: a dead share would freeze every terminal.
 - `npm run screenshots` — regenerates `docs/screenshots/` in a demo HOME (`/tmp/senju-demo`); never commit screenshots showing real user names or paths (the repo is public).
 - `npm run icons` renders `build/icon.svg` (the logo) into `build/icon.png` and `build/icons/*.png`; rerun it after changing the logo and commit the PNGs.
 - `npm start` passes `--no-sandbox`: on Ubuntu 24.04+ Electron's sandbox needs a setuid `chrome-sandbox` when run from source.

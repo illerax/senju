@@ -38,12 +38,13 @@ export function planRestore(
   recipes: Recipe[],
   autoRestart: string[],
   baseEnv: Record<string, string | undefined>,
+  present: ReadonlySet<string> = new Set(),
 ): RestorePlan {
   const job = terminal.job;
   if (!job) return terminal.pending ? { pending: terminal.pending } : {};
 
   const env = { ...baseEnv, ...terminal.env, ...job.env };
-  const recipe = (job.recipe && recipes.find((r) => r.name === job.recipe)) || matchRecipe(recipes, job.argv, job.cwd);
+  const recipe = (job.recipe && recipes.find((r) => r.name === job.recipe)) || matchRecipe(recipes, job.argv, job.cwd, present);
   if (recipe) {
     const resume = resumeCommand(recipe, job.argv, job.cwd, env, job.sessionId);
     if (resume) return { env: jobEnv(job), command: cdPrefix(job, terminal.cwd) + resume };

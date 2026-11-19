@@ -92,12 +92,43 @@ export function programOf(argv: string[]): { program: string; args: string[] } {
   return { program: first, args: argv.slice(1) };
 }
 
-export function matchRecipe(recipes: Recipe[], argv: string[], cwd: string): Recipe | null {
+/** Checks of paths that have not answered yet, shared so a stalled path occupies one thread of the pool. */
+const checking = new Map<string, Promise<boolean>>();
+
+/**
+ * Whether a path exists, or false if its file system does not answer in time.
+ * A folder on a network share that lost its connection blocks every call on
+ * it, so a synchronous check would freeze the daemon with all its terminals.
+ */
+export function pathExists(file: string, timeoutMs = 1000): Promise<boolean> {
+  let check = checking.get(file);
+  if (!check) {
+    check = fsp.access(file).then(
+      () => true,
+      () => false,
+    );
+    checking.set(file, check);
+    void check.then(() => checking.delete(file));
+  }
+  let timer: NodeJS.Timeout | undefined;
+  const timeout = new Promise<boolean>((resolve) => (timer = setTimeout(resolve, timeoutMs, false)));
+  return Promise.race([check, timeout]).finally(() => clearTimeout(timer));
+}
+
+/** The files that recipes require in a working directory and that exist, for matchRecipe. */
+export async function requiredFiles(recipes: Recipe[], cwds: string[]): Promise<Set<string>> {
+  const files = [...new Set(cwds.flatMap((cwd) => recipes.filter((r) => r.requires).map((r) => path.resolve(cwd, r.requires!))))];
+  const found = await Promise.all(files.map((file) => pathExists(file)));
+  return new Set(files.filter((_, i) => found[i]));
+}
+
+/** The recipe for a command line; `present` holds the required files that exist (see requiredFiles). */
+export function matchRecipe(recipes: Recipe[], argv: string[], cwd: string, present: ReadonlySet<string> = new Set()): Recipe | null {
   const { program } = programOf(argv);
   for (const recipe of recipes) {
     const re = new RegExp(recipe.match);
     if (!re.test(path.basename(program)) && !re.test(program)) continue;
-    if (recipe.requires && !fs.existsSync(path.resolve(cwd, recipe.requires))) continue;
+    if (recipe.requires && !present.has(path.resolve(cwd, recipe.requires))) continue;
     return recipe;
   }
   return null;

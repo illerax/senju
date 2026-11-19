@@ -12,7 +12,7 @@ import { loadSettings, type Settings } from '../shared/settings';
 import type { AppState, JobState, TerminalState } from '../shared/types';
 import { baseEnv, TerminalSession } from './terminal';
 import { inspectTerminal, type ProcessInfo } from './procinfo';
-import { listSessions, loadRecipes, matchRecipe, sessionFromArgs, sessionFromPidFile, type Recipe } from './recipes';
+import { listSessions, loadRecipes, matchRecipe, requiredFiles, sessionFromArgs, sessionFromPidFile, type Recipe } from './recipes';
 import { planRestore } from './restore';
 import { envDiff } from './shellquote';
 import { deleteScrollback, loadState, pruneScrollback, readScrollback, saveState, saveStateAsync, writeScrollback, writeScrollbackSync } from './store';
@@ -112,10 +112,12 @@ class Daemon {
     this.state = loadState(paths.stateFile);
   }
 
-  start(): void {
+  async start(): Promise<void> {
     this.repairState();
     pruneScrollback(paths.stateFile, new Set(Object.keys(this.state.terminals)));
-    for (const id of Object.keys(this.state.terminals)) this.spawn(id, true);
+    const jobCwds = Object.values(this.state.terminals).flatMap((t) => (t.job ? [t.job.cwd] : []));
+    const present = await requiredFiles(this.recipes, jobCwds);
+    for (const id of Object.keys(this.state.terminals)) this.spawn(id, true, present);
     this.saveNow();
     this.listen();
     setInterval(() => void this.pollProcesses(), POLL_MS);
@@ -141,22 +143,21 @@ class Daemon {
     for (const id of Object.keys(this.state.terminals)) if (!used.has(id)) delete this.state.terminals[id];
   }
 
-  private spawn(terminalId: string, restoring: boolean): void {
+  private spawn(terminalId: string, restoring: boolean, present?: ReadonlySet<string>): void {
     const terminal = this.state.terminals[terminalId];
     if (!terminal) return;
     let command: string | undefined;
     let env = terminal.env;
     if (restoring) {
-      const plan = planRestore(terminal, this.recipes, this.settings.autoRestart, this.env);
+      const plan = planRestore(terminal, this.recipes, this.settings.autoRestart, this.env, present);
       command = plan.command;
       env = { ...terminal.env, ...plan.env };
       terminal.pending = plan.pending;
       terminal.job = undefined;
     }
-    const cwd = fs.existsSync(terminal.cwd) ? terminal.cwd : os.homedir();
     const session = new TerminalSession({
       id: terminalId,
-      cwd,
+      cwd: terminal.cwd,
       env,
       cols: terminal.cols || 80,
       rows: terminal.rows || 24,
@@ -257,14 +258,16 @@ class Daemon {
           }
           if (tracked.jobPid !== info.job.pid || !terminal.job) {
             tracked.jobPid = info.job.pid;
-            const { job, pid } = this.describeJob(info.job, info.jobChildren, tracked.shellEnv ?? info.shellEnv);
+            const { job, pid } = await this.describeJob(info.job, info.jobChildren, tracked.shellEnv ?? info.shellEnv);
+            if (this.shuttingDown || this.sessions.get(terminalId) !== session || tracked.jobPid !== info.job.pid) return;
             terminal.job = job;
             tracked.agentPid = pid;
             terminal.pending = undefined;
             changed = true;
           } else if (terminal.job && !terminal.job.recipe) {
             // The leader may exec into another program, or start an agent as a child.
-            const { job, pid } = this.describeJob(info.job, info.jobChildren, tracked.shellEnv ?? info.shellEnv);
+            const { job, pid } = await this.describeJob(info.job, info.jobChildren, tracked.shellEnv ?? info.shellEnv);
+            if (this.shuttingDown || this.sessions.get(terminalId) !== session || !terminal.job) return;
             if (job.recipe || job.argv.join('\0') !== terminal.job.argv.join('\0')) {
               terminal.job = { ...job, startedAt: terminal.job.startedAt };
               tracked.agentPid = pid;
@@ -286,12 +289,14 @@ class Daemon {
     if (changed) this.changed();
   }
 
-  private describeJob(leader: ProcessInfo, children: ProcessInfo[], shellEnv: Record<string, string> | null | undefined) {
+  private async describeJob(leader: ProcessInfo, children: ProcessInfo[], shellEnv: Record<string, string> | null | undefined) {
     const cwd = leader.cwd ?? '';
+    const candidates = [leader, ...children];
+    const present = await requiredFiles(this.recipes, candidates.map((c) => c.cwd ?? cwd));
     let target = leader;
     let recipe: Recipe | null = null;
-    for (const candidate of [leader, ...children]) {
-      recipe = matchRecipe(this.recipes, candidate.argv, candidate.cwd ?? cwd);
+    for (const candidate of candidates) {
+      recipe = matchRecipe(this.recipes, candidate.argv, candidate.cwd ?? cwd, present);
       if (recipe) {
         target = candidate;
         break;
