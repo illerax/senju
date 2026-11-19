@@ -28,6 +28,8 @@ export interface Settings extends Font {
   copyOnSelect: boolean;
   /** Look for new releases at start and every few hours; installing always asks first. */
   checkForUpdates: boolean;
+  /** Pixels added to the font size of every terminal by zooming; 0 is the font's own size. */
+  zoom: number;
 }
 
 export const defaultSettings: Settings = {
@@ -50,6 +52,7 @@ export const defaultSettings: Settings = {
   ],
   copyOnSelect: false,
   checkForUpdates: true,
+  zoom: 0,
 };
 
 function readUserSettings(): Record<string, unknown> {

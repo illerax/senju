@@ -857,6 +857,10 @@ body.resizing-column * {
   text-decoration: underline;
 }
 
+.status-zoom {
+  gap: 4px;
+}
+
 .status-item.muted {
   color: var(--faint);
 }

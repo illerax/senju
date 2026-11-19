@@ -5,7 +5,7 @@ import { FitAddon } from '@xterm/addon-fit';
 import { Unicode11Addon } from '@xterm/addon-unicode11';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import type { Settings } from '../shared/settings';
-import { resolveFont, resolveTheme } from '../shared/themes';
+import { resolveTheme, terminalFont } from '../shared/themes';
 import { senju } from './api';
 
 export interface TerminalHooks {
@@ -13,7 +13,12 @@ export interface TerminalHooks {
   onKey: (e: KeyboardEvent) => boolean;
   onFocus: (terminalId: string) => void;
   onContextMenu: (terminalId: string, e: MouseEvent) => void;
+  /** Zooms all terminals by a number of steps; negative zooms out. */
+  onZoom: (steps: number) => void;
 }
+
+/** Wheel distance, in pixels, of one zoom step. */
+const ZOOM_WHEEL_STEP = 50;
 
 export class TerminalView {
   readonly element: HTMLDivElement;
@@ -48,7 +53,7 @@ export class TerminalView {
       if (event.ctrlKey || event.metaKey) senju.openExternal(uri);
     };
     this.term = new Terminal({
-      ...resolveFont(settings),
+      ...terminalFont(settings),
       linkHandler: {
         activate: open,
         hover: (_event, uri) => (this.host.title = uri),
@@ -89,6 +94,24 @@ export class TerminalView {
       void senju.clipboardRead('selection').then((text) => text && this.term.paste(text));
     });
 
+    // Ctrl+wheel (Cmd+wheel on macOS, where a trackpad pinch arrives as Ctrl+wheel)
+    // zooms. Caught before xterm sees it, so it neither scrolls nor reaches programs.
+    let wheel = 0;
+    this.host.addEventListener(
+      'wheel',
+      (e) => {
+        if (!(e.ctrlKey || (platform === 'darwin' && e.metaKey))) return;
+        e.preventDefault();
+        e.stopPropagation();
+        wheel += e.deltaMode === WheelEvent.DOM_DELTA_PIXEL ? e.deltaY : e.deltaY * ZOOM_WHEEL_STEP;
+        if (Math.abs(wheel) < ZOOM_WHEEL_STEP) return;
+        // One step per mouse wheel notch; small trackpad deltas add up to one.
+        hooks.onZoom(wheel < 0 ? 1 : -1);
+        wheel = 0;
+      },
+      { capture: true, passive: false },
+    );
+
     new ResizeObserver(() => this.fit()).observe(this.host);
   }
 
@@ -128,7 +151,7 @@ export class TerminalView {
   applySettings(settings: Settings): void {
     this.copyOnSelect = settings.copyOnSelect;
     this.term.options.theme = resolveTheme(settings);
-    const font = resolveFont(settings);
+    const font = terminalFont(settings);
     // Setting an unchanged option still makes xterm re-measure, so compare first.
     if (this.term.options.fontFamily !== font.fontFamily) this.term.options.fontFamily = font.fontFamily;
     if (this.term.options.fontSize !== font.fontSize) this.term.options.fontSize = font.fontSize;
