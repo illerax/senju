@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.3](https://github.com/illerax/senju/compare/v0.1.2...v0.1.3) (2026-11-19)
+
+
+### Bug Fixes
+
+* check for updates on macOS without latest-mac.yml ([#10](https://github.com/illerax/senju/issues/10)) ([2f5e741](https://github.com/illerax/senju/commit/2f5e741a7b45b8582fadfbd0ccb0dfcd4ad8aaf3))
+
 ## [0.1.2](https://github.com/illerax/senju/compare/v0.1.1...v0.1.2) (2026-11-19)
 
 
