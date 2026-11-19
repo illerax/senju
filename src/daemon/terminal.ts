@@ -103,7 +103,11 @@ export class TerminalSession {
         // Give the shell a moment to finish drawing its first prompt.
         const command = pendingCommand;
         pendingCommand = undefined;
-        setTimeout(() => this.write(`${command}\r`), 300);
+        // Ctrl+U first clears what reached the line before the command (type-ahead,
+        // mouse reports of a UI that still shows the previous program); Windows
+        // shells do not treat it as a line kill.
+        const clear = process.platform === 'win32' ? '' : '\x15';
+        setTimeout(() => this.write(`${clear}${command}\r`), 300);
       }
     });
     this.pty.onExit((status) => {
