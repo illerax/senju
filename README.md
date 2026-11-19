@@ -109,7 +109,7 @@ Create a group with **+** at the top of the sidebar; it starts in your home fold
 - Double-click a group, workspace or tab to rename it. A tab without a name shows its running program or folder.
 - Right-click a workspace for its **Color**, a group for its folder, a terminal for copy, paste and splits.
 - Drag the line between panes to resize them.
-- Select text with the mouse; on Linux it also goes to the primary selection, and a middle click pastes it. Ctrl+click (Cmd+click on macOS) opens a link.
+- Select text with the mouse; on Linux it also goes to the primary selection, and a middle click pastes it. Ctrl+click (Cmd+click on macOS) opens a link in the browser, including links that programs print with a different text (OSC 8 hyperlinks); hovering one shows its address.
 - Exiting a shell closes its tab; the last tab closes its pane, and the last pane its workspace.
 
 Closing the window only closes the UI: every terminal keeps running and is there when you open Senju again. To stop everything, use **Quit and stop all processes** at the bottom of the settings; the next start restores the terminals as after a reboot.

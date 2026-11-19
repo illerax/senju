@@ -144,6 +144,41 @@ report('tab dragged to another pane', left.tabs.some((id) => st.terminals[id].na
 await shot('2b-tabs.png');
 report('one active workspace in the sidebar', (await page.locator('.workspace.active').count()) === 1);
 
+// An OSC 8 hyperlink: hovering shows its address, Ctrl+click opens it without a confirmation.
+await app.evaluate(({ shell }) => {
+  globalThis.opened = [];
+  shell.openExternal = async (url) => void globalThis.opened.push(url);
+});
+let dialogs = 0;
+page.on('dialog', (d) => {
+  dialogs++;
+  void d.dismiss();
+});
+// In a new tab: the focused pane shows htop where it is installed.
+await page.locator('.pane.focused .xterm').click();
+await page.keyboard.press('Control+Shift+T');
+await sleep(800);
+await page.keyboard.type(`printf '\\e]8;;https://example.com/osc8\\e\\\\%s-%s\\e]8;;\\e\\\\\\n' open link\n`);
+const linkRow = await page.waitForFunction(
+  () => [...document.querySelectorAll('.pane.focused .xterm-rows > div')].find((r) => r.textContent.startsWith('open-link')),
+  null,
+  { timeout: 10000 },
+);
+const linkBox = await linkRow.evaluate((row) => {
+  const range = document.createRange();
+  range.selectNodeContents(row);
+  const r = range.getBoundingClientRect();
+  return { x: r.left + 20, y: r.top + r.height / 2 };
+});
+await page.mouse.move(linkBox.x, linkBox.y);
+await sleep(300);
+report('hovering a hyperlink shows its address', (await page.locator('.pane.focused .terminal-host').getAttribute('title')) === 'https://example.com/osc8');
+await page.keyboard.down('Control');
+await page.mouse.click(linkBox.x, linkBox.y);
+await page.keyboard.up('Control');
+await sleep(300);
+report('Ctrl+click opens a hyperlink without asking', dialogs === 0 && (await app.evaluate(() => globalThis.opened)).includes('https://example.com/osc8'));
+
 // Workspace shortcuts go across groups.
 st = await state();
 const moving = st.activeWorkspaceId;
