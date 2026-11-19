@@ -13,7 +13,7 @@ import './styles.css';
 import type { Action, DaemonMessage, SplitSide } from '../shared/protocol';
 import type { Settings } from '../shared/settings';
 import type { UpdateStatus } from '../shared/update';
-import { isLight, resolveTheme } from '../shared/themes';
+import { clampZoom, isLight, resolveTheme, zoomPercent } from '../shared/themes';
 import type { AppState, GroupState, LayoutNode, PaneNode, SplitNode, TerminalState, WorkspaceState } from '../shared/types';
 import { findPaneNode, panes, terminalIds } from '../shared/layout';
 import { senju } from './api';
@@ -440,6 +440,7 @@ function terminalView(terminalId: string): TerminalView {
         if (pane) markFocus(pane.id);
       },
       onContextMenu: (id, e) => void terminalMenu(id, e),
+      onZoom: (steps) => setZoom(settings.zoom + steps),
     });
     terminals.set(terminalId, view);
   }
@@ -461,6 +462,7 @@ async function terminalMenu(terminalId: string, e: MouseEvent): Promise<void> {
     { id: '-', label: '' },
     { id: 'closeTab', label: 'Close Tab', accelerator: keymap.accelerator('closeTab') },
     { id: 'closePane', label: 'Close Pane', accelerator: keymap.accelerator('closePane') },
+    ...(settings.zoom ? [{ id: '-', label: '' }, { id: 'resetZoom', label: 'Reset Zoom', accelerator: keymap.accelerator('resetZoom') }] : []),
   ], e);
   if (choice === 'copy') void view?.copy();
   if (choice === 'paste') void view?.paste();
@@ -468,6 +470,23 @@ async function terminalMenu(terminalId: string, e: MouseEvent): Promise<void> {
   if (choice === 'right' || choice === 'down') act({ type: 'splitPane', paneId: pane.id, side: choice });
   if (choice === 'closeTab') void closeTab(terminalId);
   if (choice === 'closePane') void closePane(pane);
+  if (choice === 'resetZoom') setZoom(0);
+}
+
+let zoomSave: ReturnType<typeof setTimeout> | null = null;
+
+/** Zooms every terminal; saved once the zooming pauses, as a mouse wheel zooms in quick steps. */
+function setZoom(zoom: number): void {
+  const next = clampZoom(settings, zoom);
+  if (next === settings.zoom) return;
+  settings = { ...settings, zoom: next };
+  for (const view of terminals.values()) view.applySettings(settings);
+  renderStatus();
+  if (zoomSave) clearTimeout(zoomSave);
+  zoomSave = setTimeout(() => {
+    zoomSave = null;
+    void senju.saveSettings({ zoom: settings.zoom });
+  }, 500);
 }
 
 async function closeTab(terminalId: string): Promise<void> {
@@ -804,6 +823,13 @@ function renderStatus(): void {
     }
   }
   if (agents) parts.push(item('muted', `${agents} agent${agents === 1 ? '' : 's'}`));
+  if (settings.zoom) {
+    const key = keymap.accelerator('resetZoom');
+    const zoom = item('link status-zoom', `Zoom ${zoomPercent(settings)}%`, key ? `Reset zoom (${key})` : 'Reset zoom');
+    zoom.insertAdjacentHTML('beforeend', iconSvg('close', 12));
+    zoom.addEventListener('click', () => setZoom(0));
+    parts.push(zoom);
+  }
   bar.replaceChildren(...parts);
 }
 
@@ -970,6 +996,12 @@ async function runCommand(command: Command): Promise<void> {
       return focusedTerminal()?.copy();
     case 'paste':
       return focusedTerminal()?.paste();
+    case 'zoomIn':
+      return setZoom(settings.zoom + 1);
+    case 'zoomOut':
+      return setZoom(settings.zoom - 1);
+    case 'resetZoom':
+      return setZoom(0);
     default:
       if (pane) switchTab(pane.tabs[Number(command.slice('tab'.length)) - 1]);
   }
@@ -1079,7 +1111,8 @@ function showUpdate(status: UpdateStatus): void {
 
 /** Applies settings to the whole window: shortcuts, theme and fonts. */
 function applySettings(next: Settings): void {
-  settings = next;
+  // A zoom not saved yet is newer than the one in saved settings.
+  settings = zoomSave ? { ...next, zoom: settings.zoom } : next;
   keymap = new Keymap(platform, settings.keybindings);
   const theme = resolveTheme(settings);
   const root = document.documentElement.style;
@@ -1093,6 +1126,7 @@ function applySettings(next: Settings): void {
   document.body.classList.toggle('light', light);
   for (const view of terminals.values()) view.applySettings(settings);
   refreshTips();
+  if (state) renderStatus();
 }
 
 async function main(): Promise<void> {

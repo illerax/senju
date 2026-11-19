@@ -99,3 +99,20 @@ describe('theme fonts', () => {
     expect(resolveFont({ ...base, themes, theme: 'Mine' })).toEqual({ fontFamily: "'Iosevka', monospace", fontSize: 14, fontWeight: 300, lineHeight: 1 });
   });
 });
+
+describe('zoom', () => {
+  it('adds the zoom to the font size of the current font', async () => {
+    const { terminalFont, zoomPercent } = await import('../src/shared/themes');
+    const themes = { Mine: { ...builtinThemes.Nord, font: { fontSize: 16 } } };
+    expect(terminalFont({ ...defaultSettings, zoom: 2 }).fontSize).toBe(15);
+    expect(terminalFont({ ...defaultSettings, themes, theme: 'Mine', zoom: -4 }).fontSize).toBe(12);
+    expect(zoomPercent({ ...defaultSettings, themes, theme: 'Mine', zoom: 4 })).toBe(125);
+  });
+
+  it('keeps the zoomed size within the font size bounds', async () => {
+    const { clampZoom, terminalFont } = await import('../src/shared/themes');
+    expect(clampZoom(defaultSettings, -20)).toBe(-7);
+    expect(clampZoom(defaultSettings, 100)).toBe(27);
+    expect(terminalFont({ ...defaultSettings, zoom: Number.NaN }).fontSize).toBe(13);
+  });
+});

@@ -155,3 +155,28 @@ export function resolveFont(settings: { theme: string; themes: Record<string, Th
   };
   return { fontFamily: pick('fontFamily'), fontSize: pick('fontSize'), fontWeight: pick('fontWeight'), lineHeight: pick('lineHeight') };
 }
+
+/** Font sizes zooming stays within, the same as the settings allow. */
+const minFontSize = 6;
+const maxFontSize = 40;
+
+type ZoomSettings = Parameters<typeof resolveFont>[0] & { zoom: number };
+
+/** The zoom kept within the font size bounds of the current font. */
+export function clampZoom(settings: ZoomSettings, zoom: number): number {
+  const base = resolveFont(settings).fontSize;
+  const steps = Number.isFinite(zoom) ? Math.round(zoom) : 0;
+  return Math.min(maxFontSize, Math.max(minFontSize, base + steps)) - base;
+}
+
+/** The font of the terminals: the current font with the zoom added to its size. */
+export function terminalFont(settings: ZoomSettings): Font {
+  const font = resolveFont(settings);
+  return { ...font, fontSize: font.fontSize + clampZoom(settings, settings.zoom) };
+}
+
+/** The zoom as a percentage of the font's own size. */
+export function zoomPercent(settings: ZoomSettings): number {
+  const base = resolveFont(settings).fontSize;
+  return Math.round(((base + clampZoom(settings, settings.zoom)) / base) * 100);
+}
