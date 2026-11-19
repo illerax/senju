@@ -42,6 +42,14 @@ export function baseEnv(): Record<string, string> {
   return env;
 }
 
+/** Output within this time marks a program as busy rather than waiting. */
+export const BUSY_MS = 1500;
+/**
+ * Output this soon after input or a resize is taken as the program echoing
+ * keys or redrawing, not as work of its own.
+ */
+const ECHO_MS = 300;
+
 export class TerminalSession {
   readonly id: string;
   readonly pty: pty.IPty;
@@ -50,6 +58,11 @@ export class TerminalSession {
   private readonly listeners = new Set<(data: string) => void>();
   /** Time of the last output, used to tell apart agents sharing a directory. */
   lastActivity = 0;
+  /** Time of the last output that was the program's own work, not an echo of input. */
+  workedAt = 0;
+  /** Called on every output counted as work. */
+  onWork: (() => void) | null = null;
+  private inputAt = 0;
   /** Output arrived since the scrollback was last persisted. */
   dirty = false;
   /** When the scrollback was last persisted. */
@@ -95,7 +108,13 @@ export class TerminalSession {
 
     let pendingCommand = opts.initialCommand;
     this.pty.onData((data) => {
-      this.lastActivity = Date.now();
+      const now = Date.now();
+      this.lastActivity = now;
+      // While busy every output counts, so typing ahead does not end the work.
+      if (now - this.inputAt > ECHO_MS || now - this.workedAt < BUSY_MS) {
+        this.workedAt = now;
+        this.onWork?.();
+      }
       this.dirty = true;
       this.term.write(data);
       for (const listener of this.listeners) listener(data);
@@ -122,12 +141,15 @@ export class TerminalSession {
   }
 
   write(data: string): void {
-    if (!this.exited) this.pty.write(data);
+    if (this.exited) return;
+    this.inputAt = Date.now();
+    this.pty.write(data);
   }
 
   resize(cols: number, rows: number): void {
     if (this.exited || cols < 2 || rows < 1) return;
     if (cols === this.term.cols && rows === this.term.rows) return;
+    this.inputAt = Date.now();
     this.pty.resize(cols, rows);
     this.term.resize(cols, rows);
   }
