@@ -154,7 +154,10 @@ page.on('dialog', (d) => {
   dialogs++;
   void d.dismiss();
 });
+// In a new tab: the focused pane shows htop where it is installed.
 await page.locator('.pane.focused .xterm').click();
+await page.keyboard.press('Control+Shift+T');
+await sleep(800);
 await page.keyboard.type(`printf '\\e]8;;https://example.com/osc8\\e\\\\%s-%s\\e]8;;\\e\\\\\\n' open link\n`);
 const linkRow = await page.waitForFunction(
   () => [...document.querySelectorAll('.pane.focused .xterm-rows > div')].find((r) => r.textContent.startsWith('open-link')),
