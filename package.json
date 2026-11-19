@@ -21,6 +21,7 @@
     "postinstall": "electron-rebuild -f -w node-pty",
     "dist": "npm run build && electron-builder",
     "test:perf": "npm run build && node scripts/latency-probe.mjs 30 && node scripts/ui-latency.mjs 20 && node scripts/perf-smoke.mjs",
+    "test:network": "npm run build && node scripts/flaky-share.mjs && node scripts/flaky-updates.mjs",
     "icons": "electron --no-sandbox scripts/render-icons.cjs",
     "screenshots": "npm run build && node scripts/screenshots.mjs"
   },

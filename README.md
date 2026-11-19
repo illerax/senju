@@ -236,6 +236,7 @@ npm test             # unit tests
 npm run test:daemon  # end-to-end test of the background service: terminals, jobs, agents, restore
 npm run test:ui      # drives the app with Playwright and saves screenshots to ui-smoke/
 npm run test:perf    # keystroke latency under heavy output, switching times
+npm run test:network # a network share and an update server on a bad connection (Linux, needs fusermount3)
 npm run screenshots  # regenerates the README screenshots in docs/screenshots/
 npm run icons        # renders build/icon.svg into the app icons
 node scripts/update-e2e.mjs <old.AppImage> <dir>  # self-update test, see the script

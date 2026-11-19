@@ -1,6 +1,7 @@
 // A live terminal: a shell in a pseudo terminal mirrored into a headless xterm,
 // which provides scrollback snapshots for reattaching UIs and for persistence.
 
+import fs from 'node:fs';
 import os from 'node:os';
 import * as pty from 'node-pty';
 import { Terminal } from '@xterm/headless';
@@ -69,11 +70,19 @@ export class TerminalSession {
     }
 
     const shell = defaultShell(opts.settings);
-    this.pty = pty.spawn(shell.file, shell.args, {
+    const cwd = opts.cwd || os.homedir();
+    // On Unix the shell changes into its folder itself, starting in the home
+    // folder when that one is gone: a folder on a network share that stopped
+    // answering then stalls only this shell, not the daemon with all terminals.
+    const start =
+      process.platform === 'win32'
+        ? { file: shell.file, args: shell.args, cwd: fs.existsSync(cwd) ? cwd : os.homedir() }
+        : { file: '/bin/sh', args: ['-c', 'cd -- "$0" 2>/dev/null; exec "$@"', cwd, shell.file, ...shell.args], cwd: os.homedir() };
+    this.pty = pty.spawn(start.file, start.args, {
       name: 'xterm-256color',
       cols: opts.cols,
       rows: opts.rows,
-      cwd: opts.cwd || os.homedir(),
+      cwd: start.cwd,
       env: {
         ...baseEnv(),
         ...opts.env,
