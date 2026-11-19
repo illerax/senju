@@ -276,7 +276,7 @@ The bump is computed from [Conventional Commits](https://www.conventionalcommits
 - `feat!: …`, or a `BREAKING CHANGE:` paragraph in the PR description → major
 - `docs:`, `test:`, `ci:`, `build:`, `refactor:`, `chore:`, `style:` → no release
 
-After each merge, [release-please](https://github.com/googleapis/release-please) updates a `chore: release x.y.z` pull request with the new version and changelog. Merging it tags the version, publishes the GitHub release and attaches the installers for Linux (AppImage, deb), macOS (dmg, Apple silicon and Intel) and Windows (installer), built by CI. The installers are not code-signed yet, so macOS and Windows warn on first start.
+After each merge, [release-please](https://github.com/googleapis/release-please) updates a `chore: release x.y.z` pull request with the new version and changelog. Merging it tags the version, creates the GitHub release and attaches the installers for Linux (AppImage, deb), macOS (dmg, Apple silicon and Intel) and Windows (installer), built by CI. The release stays a pre-release until all installers are attached, so installed apps and the install command only see it once there is something to install. The installers are not code-signed yet, so macOS and Windows warn on first start.
 
 ## License
 

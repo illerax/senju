@@ -139,8 +139,10 @@ export class Updater {
     const release = (await response.json()) as ReleaseInfo;
     const version = release.tag_name?.replace(/^v/, '');
     if (!version) throw new Error('The latest release has no version tag');
-    if (isNewerVersion(version, app.getVersion()) && this.dismissed !== version) {
-      this.macImage = macDiskImage(release, version, process.arch);
+    // A release without a disk image for this Mac has nothing to install yet: its installers may still be uploading.
+    const image = macDiskImage(release, version, process.arch);
+    if (image && isNewerVersion(version, app.getVersion()) && this.dismissed !== version) {
+      this.macImage = image;
       this.offer(version);
     } else {
       this.set({ state: 'current', checkedAt: Date.now() });
