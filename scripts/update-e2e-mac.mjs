@@ -123,9 +123,10 @@ try {
   const relaunched = await until('the new version', () => appProcesses()[0], 30000).catch(() => 0);
   check(relaunched > 0, 'the new version starts');
   check(version(installed) === newVersion, `the installed app is ${newVersion}`);
-  await sleep(5000);
   const dir = path.dirname(installed);
-  check(!fs.readdirSync(dir).some((name) => name.startsWith('.Senju.app.')), 'nothing of the update is left next to the app');
+  const leftovers = () => fs.readdirSync(dir).filter((name) => name.startsWith('.Senju.app.'));
+  await until('the old version to be removed', () => leftovers().length === 0, 30000).catch(() => {});
+  check(leftovers().length === 0, `nothing of the update is left next to the app (${leftovers().join(', ') || 'none'})`);
   check(alive(daemonPid), 'the daemon kept running');
   check(jobs(await daemon()).includes('sleep 600'), 'the program in the terminal kept running');
   check(relaunched > 0 && alive(relaunched), 'the new version keeps running');

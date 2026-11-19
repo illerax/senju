@@ -5,7 +5,7 @@
 // two by renaming, so the installed app is never half written. The daemon runs
 // from its own copy of the app (daemon-runtime.ts) and is not touched.
 
-import { execFile } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { promisify } from 'node:util';
@@ -122,6 +122,7 @@ export function swap(install: MacInstall): void {
     fs.renameSync(install.old, install.bundle);
     throw err;
   }
-  // Files of a running program stay readable after removal, so the old version can go now.
-  void fs.promises.rm(install.old, { recursive: true, force: true }).catch(() => {});
+  // Files of a running program stay readable after removal, so the old version
+  // can go now, by a process of its own that finishes after the app has quit.
+  spawn('rm', ['-rf', install.old], { detached: true, stdio: 'ignore' }).unref();
 }
