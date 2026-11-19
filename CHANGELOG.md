@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.1.8](https://github.com/illerax/senju/compare/v0.1.7...v0.1.8) (2026-11-19)
+
+
+### Features
+
+* record hangs, errors and the system in diagnostics.log ([#30](https://github.com/illerax/senju/issues/30)) ([b91fac8](https://github.com/illerax/senju/commit/b91fac8679f70714f91fbd79c618b0647a6daa92))
+
+
+### Bug Fixes
+
+* offer an update only once its installers are attached ([#28](https://github.com/illerax/senju/issues/28)) ([8ac5198](https://github.com/illerax/senju/commit/8ac5198dceff95c984d6acf34b8b8161fa03cae6))
+
 ## [0.1.7](https://github.com/illerax/senju/compare/v0.1.6...v0.1.7) (2026-11-19)
 
 
