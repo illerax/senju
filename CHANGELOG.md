@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.1.4](https://github.com/illerax/senju/compare/v0.1.3...v0.1.4) (2026-11-19)
+
+
+### Features
+
+* switch workspaces across groups and move them with shortcuts ([#16](https://github.com/illerax/senju/issues/16)) ([5f248a5](https://github.com/illerax/senju/commit/5f248a570506d152dbbbfd9392edf13878e3c026))
+
+
+### Bug Fixes
+
+* draw the close pane button as a plain cross ([#12](https://github.com/illerax/senju/issues/12)) ([d08e9c9](https://github.com/illerax/senju/commit/d08e9c9f55d5829462a3371c4d5dbe8e24814ae0))
+* keep terminals responsive when a network share or the update server stops answering ([#14](https://github.com/illerax/senju/issues/14)) ([37eebfe](https://github.com/illerax/senju/commit/37eebfe2c2df0d5d59e4bdc03dc8d6788aed0417))
+* stop process polling from piling up ps and lsof on macOS ([#15](https://github.com/illerax/senju/issues/15)) ([a95a37c](https://github.com/illerax/senju/commit/a95a37cb0ff54cc805764d9c6fbe1cd3421ce9fa))
+
 ## [0.1.3](https://github.com/illerax/senju/compare/v0.1.2...v0.1.3) (2026-11-19)
 
 
