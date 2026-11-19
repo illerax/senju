@@ -56,9 +56,12 @@ export const commands = {
 
   toggleSidebar: { label: 'Show or hide the sidebar', category: 'Window', linux: ['Ctrl+Shift+B'], mac: ['Cmd+B'] },
   openSettings: { label: 'Open settings', category: 'Window', linux: ['Ctrl+Shift+,'], mac: ['Cmd+,'] },
-  zoomIn: { label: 'Zoom in terminals', category: 'Window', linux: ['Ctrl+Shift+='], mac: ['Cmd+='] },
-  zoomOut: { label: 'Zoom out terminals', category: 'Window', linux: ['Ctrl+Shift+-'], mac: ['Cmd+-'] },
-  resetZoom: { label: 'Reset terminal zoom', category: 'Window', linux: ['Ctrl+Shift+0'], mac: ['Cmd+0'] },
+  zoomIn: { label: 'Zoom in the tab', category: 'Window', linux: ['Ctrl+Shift+='], mac: ['Cmd+='] },
+  zoomOut: { label: 'Zoom out the tab', category: 'Window', linux: ['Ctrl+Shift+-'], mac: ['Cmd+-'] },
+  resetZoom: { label: 'Reset the zoom of the tab', category: 'Window', linux: ['Ctrl+Shift+0'], mac: ['Cmd+0'] },
+  zoomInAll: { label: 'Zoom in all terminals', category: 'Window', linux: ['Ctrl+Alt+Shift+='], mac: ['Cmd+Alt+='] },
+  zoomOutAll: { label: 'Zoom out all terminals', category: 'Window', linux: ['Ctrl+Alt+Shift+-'], mac: ['Cmd+Alt+-'] },
+  resetZoomAll: { label: 'Reset the zoom of all terminals', category: 'Window', linux: ['Ctrl+Alt+Shift+0'], mac: ['Cmd+Alt+0'] },
 } satisfies Record<string, CommandInfo>;
 
 export type Command = keyof typeof commands;

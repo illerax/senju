@@ -109,7 +109,7 @@ Create a group with **+** at the top of the sidebar; it starts in your home fold
 - Double-click a group, workspace or tab to rename it. A tab without a name shows its running program or folder.
 - Right-click a workspace for its **Color**, a group for its folder, a terminal for copy, paste and splits.
 - Drag the line between panes to resize them.
-- Ctrl+mouse wheel (Cmd+wheel or a pinch on macOS) zooms the text of all terminals; so do the zoom shortcuts below. While zoomed, the status bar shows the zoom; click it, or choose **Reset Zoom** in a terminal's context menu, to return to the font's own size. The zoom is kept across restarts.
+- Ctrl+mouse wheel (Cmd+wheel or a pinch on macOS) zooms the text of the tab under the pointer; so do the tab zoom shortcuts below for the focused tab. Other shortcuts zoom all terminals, and a tab's own zoom adds to that. While the focused tab is zoomed, the status bar shows its zoom; click it to return the tab to the font's own size. A terminal's context menu has **Reset Tab Zoom** and **Reset Zoom of All Terminals**. Both zooms are kept across restarts.
 - Select text with the mouse; on Linux it also goes to the primary selection, and a middle click pastes it. Ctrl+click (Cmd+click on macOS) opens a link in the browser, including links that programs print with a different text (OSC 8 hyperlinks); hovering one shows its address.
 - Exiting a shell closes its tab; the last tab closes its pane, and the last pane its workspace.
 
@@ -138,8 +138,10 @@ Change any of them in **Settings → Keyboard Shortcuts** (the gear at the botto
 | Copy / paste | Ctrl+Shift+C / V, Shift+Insert | Cmd+C / V |
 | Show / hide the sidebar | Ctrl+Shift+B | Cmd+B |
 | Settings | Ctrl+Shift+, | Cmd+, |
-| Zoom terminals in / out | Ctrl+Shift+= / - | Cmd+= / - |
-| Reset terminal zoom | Ctrl+Shift+0 | Cmd+0 |
+| Zoom the tab in / out | Ctrl+Shift+= / - | Cmd+= / - |
+| Reset the zoom of the tab | Ctrl+Shift+0 | Cmd+0 |
+| Zoom all terminals in / out | Ctrl+Alt+Shift+= / - | Cmd+Alt+= / - |
+| Reset the zoom of all terminals and tabs | Ctrl+Alt+Shift+0 | Cmd+Alt+0 |
 
 "Close workspace" has no default shortcut. Switching to another group returns to the workspace you last used there.
 
@@ -175,7 +177,7 @@ Settings live in `settings.json`, which holds only what differs from the default
 | Key | Default | Description |
 | --- | --- | --- |
 | `fontFamily`, `fontSize`, `fontWeight`, `lineHeight` | JetBrains Mono, 13, 400, 1 | Default terminal font. |
-| `zoom` | `0` | Pixels added to the font size of every terminal by zooming. |
+| `zoom` | `0` | Pixels added to the font size of every terminal by zooming all terminals; a tab's own zoom is kept with the workspaces. |
 | `theme` | `Senju Dark` | Name of a built-in or custom theme. |
 | `themes` | `{}` | Custom themes by name: `background`, `foreground`, `cursor`, `selectionBackground`, the 16 ANSI colors (`black` … `brightWhite`) and optionally `font`. |
 | `keybindings` | `{}` | Shortcuts that differ from the defaults, e.g. `{ "newTab": ["Ctrl+Alt+T"] }`; an empty list unbinds a command. |

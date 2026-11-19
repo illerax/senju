@@ -77,6 +77,8 @@ export interface TerminalState {
   /** The running program printed output in the last few seconds. An agent that stays quiet is waiting for input. */
   busy?: boolean;
   pending?: PendingCommand;
+  /** Pixels the user zoomed this terminal by, on top of the zoom of all terminals. */
+  zoom?: number;
 }
 
 export interface UiState {

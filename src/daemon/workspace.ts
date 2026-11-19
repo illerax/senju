@@ -291,6 +291,11 @@ export function applyAction(state: AppState, action: Action, home: string): Effe
       if (terminal) terminal.name = action.name.trim() || undefined;
       break;
     }
+    case 'zoomTab': {
+      const terminal = state.terminals[action.terminalId];
+      if (terminal) terminal.zoom = Number.isFinite(action.zoom) && Math.round(action.zoom) ? Math.round(action.zoom) : undefined;
+      break;
+    }
     case 'moveTab': {
       const source = findTerminal(state, action.terminalId);
       const target = findPane(state, action.paneId);
