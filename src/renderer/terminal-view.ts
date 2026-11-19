@@ -41,8 +41,19 @@ export class TerminalView {
     this.overlay.className = 'terminal-overlay';
     this.element.append(this.host, this.overlay);
 
+    // Ctrl+click (Cmd+click) opens plain URLs and OSC 8 hyperlinks alike. A
+    // hyperlink's text can differ from its address, so hovering shows the
+    // address; xterm's default handler would ask with a native confirm().
+    const open = (event: MouseEvent, uri: string) => {
+      if (event.ctrlKey || event.metaKey) senju.openExternal(uri);
+    };
     this.term = new Terminal({
       ...resolveFont(settings),
+      linkHandler: {
+        activate: open,
+        hover: (_event, uri) => (this.host.title = uri),
+        leave: () => this.host.removeAttribute('title'),
+      },
       scrollback: settings.scrollback,
       theme: resolveTheme(settings),
       allowProposedApi: true,
@@ -54,11 +65,7 @@ export class TerminalView {
     const unicode = new Unicode11Addon();
     this.term.loadAddon(unicode);
     this.term.unicode.activeVersion = '11';
-    this.term.loadAddon(
-      new WebLinksAddon((event, uri) => {
-        if (event.ctrlKey || event.metaKey) senju.openExternal(uri);
-      }),
-    );
+    this.term.loadAddon(new WebLinksAddon(open));
     this.term.open(this.host);
 
     this.term.attachCustomKeyEventHandler((e) => e.type !== 'keydown' || !hooks.onKey(e));
