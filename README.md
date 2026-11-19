@@ -123,7 +123,8 @@ Change any of them in **Settings → Keyboard Shortcuts** (the gear at the botto
 | New group | Ctrl+Shift+G | Cmd+Shift+N |
 | Next / previous group | Ctrl+Shift+End / Home | Cmd+Ctrl+Down / Up |
 | New workspace in the current group | Ctrl+Shift+N | Cmd+N |
-| Next / previous workspace in the group | Ctrl+Shift+PageDown / PageUp | Cmd+Shift+Down / Up |
+| Next / previous workspace, across groups | Ctrl+Shift+PageDown / PageUp | Cmd+Shift+Down / Up |
+| Move workspace down / up, into the next or previous group at the ends | Ctrl+Alt+Shift+PageDown / PageUp | Cmd+Alt+Shift+Down / Up |
 | Split right / down | Ctrl+Shift+D / E | Cmd+D / Cmd+Shift+D |
 | Close pane with its tabs | Ctrl+Shift+X | Cmd+Shift+W |
 | Next / previous pane | Ctrl+Shift+] / [ | Cmd+] / [ |

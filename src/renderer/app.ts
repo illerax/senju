@@ -911,9 +911,28 @@ async function runCommand(command: Command): Promise<void> {
       return;
     case 'nextWorkspace':
     case 'prevWorkspace': {
-      const list = ctx?.group.workspaces ?? [];
-      const next = cycle(list, list.findIndex((w) => w.id === state.activeWorkspaceId), command === 'nextWorkspace' ? 1 : -1);
-      if (next) act({ type: 'activateWorkspace', workspaceId: next.id });
+      // Through all groups in sidebar order, opening a collapsed group it enters.
+      const list = state.groups.flatMap((group) => group.workspaces.map((workspace) => ({ group, workspace })));
+      const next = cycle(list, list.findIndex((w) => w.workspace.id === state.activeWorkspaceId), command === 'nextWorkspace' ? 1 : -1);
+      if (!next) return;
+      if (next.group.collapsed) act({ type: 'setGroupCollapsed', groupId: next.group.id, collapsed: false });
+      act({ type: 'activateWorkspace', workspaceId: next.workspace.id });
+      return;
+    }
+    case 'moveWorkspaceDown':
+    case 'moveWorkspaceUp': {
+      // One place down or up; past the end of its group, into the next or previous group.
+      if (!ctx) return;
+      const { group, workspace } = ctx;
+      const index = group.workspaces.indexOf(workspace);
+      const groupIndex = state.groups.indexOf(group);
+      const down = command === 'moveWorkspaceDown';
+      if (down && index < group.workspaces.length - 1) act({ type: 'moveWorkspace', workspaceId: workspace.id, groupId: group.id, toIndex: index + 2 });
+      else if (!down && index > 0) act({ type: 'moveWorkspace', workspaceId: workspace.id, groupId: group.id, toIndex: index - 1 });
+      else {
+        const target = state.groups[groupIndex + (down ? 1 : -1)];
+        if (target) act({ type: 'moveWorkspace', workspaceId: workspace.id, groupId: target.id, toIndex: down ? 0 : target.workspaces.length });
+      }
       return;
     }
     case 'nextGroup':

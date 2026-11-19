@@ -29,8 +29,10 @@ export const commands = {
 
   newWorkspace: { label: 'New workspace', category: 'Workspaces', linux: ['Ctrl+Shift+N'], mac: ['Cmd+N'] },
   closeWorkspace: { label: 'Close workspace', category: 'Workspaces', linux: [], mac: [] },
-  nextWorkspace: { label: 'Next workspace in the group', category: 'Workspaces', linux: ['Ctrl+Shift+PageDown'], mac: ['Cmd+Shift+Down'] },
-  prevWorkspace: { label: 'Previous workspace in the group', category: 'Workspaces', linux: ['Ctrl+Shift+PageUp'], mac: ['Cmd+Shift+Up'] },
+  nextWorkspace: { label: 'Next workspace', category: 'Workspaces', linux: ['Ctrl+Shift+PageDown'], mac: ['Cmd+Shift+Down'] },
+  prevWorkspace: { label: 'Previous workspace', category: 'Workspaces', linux: ['Ctrl+Shift+PageUp'], mac: ['Cmd+Shift+Up'] },
+  moveWorkspaceDown: { label: 'Move workspace down', category: 'Workspaces', linux: ['Ctrl+Alt+Shift+PageDown'], mac: ['Cmd+Alt+Shift+Down'] },
+  moveWorkspaceUp: { label: 'Move workspace up', category: 'Workspaces', linux: ['Ctrl+Alt+Shift+PageUp'], mac: ['Cmd+Alt+Shift+Up'] },
 
   splitRight: { label: 'Split right', category: 'Panes', linux: ['Ctrl+Shift+D'], mac: ['Cmd+D'] },
   splitDown: { label: 'Split down', category: 'Panes', linux: ['Ctrl+Shift+E'], mac: ['Cmd+Shift+D'] },

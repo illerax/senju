@@ -144,6 +144,30 @@ report('tab dragged to another pane', left.tabs.some((id) => st.terminals[id].na
 await shot('2b-tabs.png');
 report('one active workspace in the sidebar', (await page.locator('.workspace.active').count()) === 1);
 
+// Workspace shortcuts go across groups.
+st = await state();
+const moving = st.activeWorkspaceId;
+const senjuGroup = st.groups[0].id;
+const where = (s) => {
+  const g = s.groups.find((x) => x.workspaces.some((w) => w.id === moving));
+  return `${g.id === senjuGroup ? 'senju' : 'scratch'}:${g.workspaces.findIndex((w) => w.id === moving)}`;
+};
+await page.keyboard.press('Control+Shift+PageUp');
+await sleep(300);
+st = await state();
+report('previous workspace crosses into the previous group', st.activeWorkspaceId === st.groups[0].workspaces[0].id);
+await page.keyboard.press('Control+Shift+PageDown');
+await sleep(300);
+report('next workspace comes back', (await state()).activeWorkspaceId === moving);
+const moves = [];
+for (const key of ['PageDown', 'PageDown', 'PageUp', 'PageUp', 'PageDown']) {
+  await page.keyboard.press(`Control+Alt+Shift+${key}`);
+  await sleep(300);
+  moves.push(where(await state()));
+}
+report(`workspace moves down, stops at the end, moves up into the previous group and back (${moves.join(' ')})`, moves.join(' ') === 'scratch:1 scratch:1 scratch:0 senju:1 scratch:0');
+report('the moved workspace stays active', (await state()).activeWorkspaceId === moving);
+
 // Closing the UI keeps the daemon; a new UI gets everything back.
 await quit(app);
 await sleep(500);
