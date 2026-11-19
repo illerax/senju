@@ -6,7 +6,6 @@ const paths = {
   close: '<path d="M4.5 4.5l7 7M11.5 4.5l-7 7"/>',
   splitRight: '<rect x="2" y="3" width="12" height="10" rx="1.5"/><path d="M8 3v10"/>',
   splitDown: '<rect x="2" y="3" width="12" height="10" rx="1.5"/><path d="M2 8h12"/>',
-  closePane: '<rect x="2" y="3" width="12" height="10" rx="1.5"/><path d="M6 6.5l4 3M10 6.5l-4 3"/>',
   chevronDown: '<path d="M4.5 6.25L8 9.75l3.5-3.5"/>',
   chevronRight: '<path d="M6.25 4.5L9.75 8l-3.5 3.5"/>',
   sidebar: '<rect x="2" y="3" width="12" height="10" rx="1.5"/><path d="M6 3v10"/>',

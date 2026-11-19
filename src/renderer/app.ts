@@ -525,7 +525,7 @@ class PaneView {
       button('plus', 'New tab', 'newTab', () => act({ type: 'createTab', paneId: this.id })),
       button('splitRight', 'Split right', 'splitRight', () => act({ type: 'splitPane', paneId: this.id, side: 'right' })),
       button('splitDown', 'Split down', 'splitDown', () => act({ type: 'splitPane', paneId: this.id, side: 'down' })),
-      button('closePane', 'Close pane with all its tabs', 'closePane', () => void closePane(this.node)),
+      button('close', 'Close pane with all its tabs', 'closePane', () => void closePane(this.node)),
     );
     this.tabBar.append(this.tabList, this.actions);
     this.element.append(this.tabBar, this.body);
