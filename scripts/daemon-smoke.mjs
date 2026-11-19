@@ -36,7 +36,16 @@ fs.writeFileSync(
   path.join(home, 'recipes', 'claude.json'),
   JSON.stringify({ ...builtin, resume: `${bin}/claude \${flags} --resume \${sessionId}`, fallback: `${bin}/claude \${flags} --continue` }),
 );
-const env = { ...process.env, SENJU_HOME: home, ELECTRON_RUN_AS_NODE: '1', XDG_RUNTIME_DIR: home, PATH: `${bin}:${process.env.PATH}` };
+// The daemon inherits paths of AppImage mounts, as it does when an updated
+// AppImage was started by the previous one; shells must not get them.
+const env = {
+  ...process.env,
+  SENJU_HOME: home,
+  ELECTRON_RUN_AS_NODE: '1',
+  XDG_RUNTIME_DIR: home,
+  PATH: `${bin}:/tmp/.mount_senjuOld123/usr/bin:${process.env.PATH}`,
+  LD_LIBRARY_PATH: '/tmp/.mount_senjuOld123/usr/lib:/opt/senju-smoke/lib',
+};
 const socketPath = path.join(home, 'daemon.sock');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 let failures = 0;
@@ -117,6 +126,10 @@ c.send({ type: 'attach', terminalId: termA });
 c.send({ type: 'input', terminalId: termA, data: 'cd sub && echo hello-senju\r' });
 check(await waitFor(() => c.output[termA]?.includes('hello-senju')), 'terminal runs shell commands');
 check(await waitFor(() => term(termA).cwd === path.join(work, 'sub')), 'working directory is tracked');
+c.send({ type: 'input', terminalId: termA, data: 'echo "en""v:$LD_LIBRARY_PATH:$PATH:e""nd"\r' });
+const shellEnv = await waitFor(() => /env:(.*):end/.exec(c.output[termA] ?? '')?.[1]);
+const cleanEnv = !!shellEnv && !shellEnv.includes('.mount_') && shellEnv.startsWith('/opt/senju-smoke/lib:');
+check(cleanEnv, `the shell gets no AppImage mount paths${cleanEnv ? '' : ` (${shellEnv})`}`);
 
 c.send({ type: 'action', action: { type: 'splitPane', paneId: paneA, side: 'right' } });
 await waitFor(() => Object.keys(c.state.terminals).length === 2);
