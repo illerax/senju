@@ -22,3 +22,21 @@ export function isNewerVersion(candidate: string, current: string): boolean {
   }
   return false;
 }
+
+/** A release as the GitHub API describes it; only the fields the updater reads. */
+export interface ReleaseInfo {
+  tag_name?: string;
+  assets?: { name: string; browser_download_url: string }[];
+}
+
+/** The download URL of the macOS disk image for an architecture, named as `artifactName` in package.json does. */
+export function macDiskImage(release: ReleaseInfo, version: string, arch: string): string | null {
+  const name = `Senju-${version}-mac-${arch}.dmg`;
+  return release.assets?.find((asset) => asset.name === name)?.browser_download_url ?? null;
+}
+
+/** The .app bundle an executable runs from (…/Senju.app/Contents/MacOS/Senju), or null. */
+export function appBundle(executable: string): string | null {
+  const match = /^(.+\.app)\/Contents\/MacOS\/[^/]+$/.exec(executable);
+  return match ? match[1] : null;
+}

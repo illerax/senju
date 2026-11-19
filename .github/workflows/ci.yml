@@ -101,6 +101,16 @@ jobs:
         run: npx electron-builder ${{ matrix.args }} --dir --publish never
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
+      - name: Self-update end-to-end test
+        if: runner.os == 'macOS'
+        # The installed app of this build updates itself to a disk image of a newer version.
+        run: |
+          mkdir -p "$RUNNER_TEMP/Applications"
+          ditto release/mac-arm64/Senju.app "$RUNNER_TEMP/Applications/Senju.app"
+          npx electron-builder --mac dmg --arm64 --publish never -c.extraMetadata.version=99.0.0
+          node scripts/update-e2e-mac.mjs "$RUNNER_TEMP/Applications/Senju.app" release/Senju-99.0.0-mac-arm64.dmg
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: false
       - name: Native modules run on glibc 2.35 (Ubuntu 22.04, Debian 12) and newer
         if: runner.os == 'Linux'
         run: |

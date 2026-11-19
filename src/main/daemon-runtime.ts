@@ -1,15 +1,17 @@
 // Where the daemon runs from. Updating replaces the app's files. On Linux
-// packages and macOS that does not disturb a running daemon, but the Windows
-// installer closes every running Senju.exe and an AppImage's mount goes away
-// when the old version quits. There the daemon runs from a copy of the app,
-// kept per version outside the install location, so an update never stops
-// the user's terminals.
+// packages that does not disturb a running daemon, but the Windows installer
+// closes every running Senju.exe, an AppImage's mount goes away when the old
+// version quits, and on macOS the replaced bundle would hand a running daemon
+// the new version's files (node-pty's spawn-helper, for one). There the
+// daemon runs from a copy of the app, kept per version outside the install
+// location, so an update never stops the user's terminals.
 
 import fs from 'node:fs';
 import path from 'node:path';
 import { app } from 'electron';
 import { BUILD_ID } from '../shared/build';
 import { paths } from '../shared/paths';
+import { appBundle } from '../shared/update';
 
 export interface DaemonLauncher {
   executable: string;
@@ -41,7 +43,7 @@ function daemonEnv(): NodeJS.ProcessEnv {
 }
 
 export function needsCopy(): boolean {
-  return app.isPackaged && (process.platform === 'win32' || (!!process.env.APPIMAGE && !!process.env.APPDIR));
+  return app.isPackaged && (process.platform === 'win32' || process.platform === 'darwin' || (!!process.env.APPIMAGE && !!process.env.APPDIR));
 }
 
 async function copyApp(root: string, target: string, executableRelative: string): Promise<void> {
@@ -50,7 +52,8 @@ async function copyApp(root: string, target: string, executableRelative: string)
   // Copy app.asar as the file it is, not as the folder Electron's fs shows.
   process.noAsar = true;
   try {
-    await fs.promises.cp(root, partial, { recursive: true, verbatimSymlinks: true });
+    // Clones where the file system can (APFS), which takes no time or space.
+    await fs.promises.cp(root, partial, { recursive: true, verbatimSymlinks: true, mode: fs.constants.COPYFILE_FICLONE });
   } finally {
     process.noAsar = false;
   }
@@ -85,9 +88,11 @@ export async function daemonLauncher(script: string): Promise<DaemonLauncher> {
   const env = daemonEnv();
   if (!needsCopy()) return { executable: process.execPath, script, env };
 
-  const root = process.env.APPIMAGE ? process.env.APPDIR! : path.dirname(process.execPath);
+  // macOS copies the whole bundle, which keeps its .app name so it still is one.
+  const bundle = process.platform === 'darwin' ? appBundle(process.execPath) : null;
+  const root = process.env.APPIMAGE ? process.env.APPDIR! : (bundle ?? path.dirname(process.execPath));
   const executableRelative = path.relative(root, process.execPath);
-  const target = path.join(paths.daemonCopies, `${app.getVersion()}-${BUILD_ID}`);
+  const target = path.join(paths.daemonCopies, `${app.getVersion()}-${BUILD_ID}${bundle ? '.app' : ''}`);
   if (!fs.existsSync(path.join(target, '.complete'))) await copyApp(root, target, executableRelative);
   void pruneCopies(target);
   const executable =

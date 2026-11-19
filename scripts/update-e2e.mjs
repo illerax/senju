@@ -84,12 +84,14 @@ const daemonPid = Number(fs.readFileSync(path.join(home, 'daemon.log'), 'utf8').
 const daemonExe = fs.readlinkSync(`/proc/${daemonPid}/exe`);
 check(daemonExe.startsWith(path.join(home, 'daemon-runtime')), `daemon runs from its own copy (${path.relative(home, daemonExe)})`);
 const environ = fs.readFileSync(`/proc/${daemonPid}/environ`, 'utf8');
-check(!/(^|\0)(APPDIR|APPIMAGE)=/.test(environ) && !/\.mount_/.test(environ), 'daemon environment has no AppImage paths');
+const appImageVars = environ.split('\0').filter((entry) => /^(APPDIR|APPIMAGE)=/.test(entry) || entry.includes('.mount_'));
+check(appImageVars.length === 0, `daemon environment has no AppImage paths${appImageVars.length ? ` (${appImageVars.map((e) => e.split('=')[0]).join(', ')})` : ''}`);
 const sleepPid = Number((await import('node:child_process')).execSync('pgrep -n -x sleep').toString());
 
 console.log('waiting for the update check…');
 await page.waitForSelector('.banner-row[data-banner="update"]', { timeout: 30000 });
-check((await page.locator('.banner-row[data-banner="update"]').innerText()).includes('0.1.1 is available'), 'banner offers the new version');
+const newVersion = /^version: (.+)$/m.exec(fs.readFileSync(path.join(serverDir, 'latest-linux.yml'), 'utf8'))[1];
+check((await page.locator('.banner-row[data-banner="update"]').innerText()).includes(`${newVersion} is available`), 'banner offers the new version');
 await page.locator('.banner-row[data-banner="update"] .button', { hasText: 'Download and install' }).click();
 await page.waitForFunction(() => document.querySelector('.banner-row[data-banner="update"]')?.textContent?.includes('is ready'), null, { timeout: 120000 });
 check(true, 'update downloaded after approval');
