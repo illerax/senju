@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.7](https://github.com/illerax/senju/compare/v0.1.6...v0.1.7) (2026-11-19)
+
+
+### Bug Fixes
+
+* keep paths of AppImage mounts out of the terminals' environment ([#27](https://github.com/illerax/senju/issues/27)) ([d081d7d](https://github.com/illerax/senju/commit/d081d7d7314099db25c35aba885c5ef268a67c29))
+* show an agent as working or waiting without a delay ([#25](https://github.com/illerax/senju/issues/25)) ([d181b13](https://github.com/illerax/senju/commit/d181b1308da97bd2d9540fc80bf72fbbd7ab3d4b))
+
 ## [0.1.6](https://github.com/illerax/senju/compare/v0.1.5...v0.1.6) (2026-11-19)
 
 
