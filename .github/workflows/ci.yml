@@ -75,13 +75,19 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # `os` names the required check; `runner` is where it runs. Linux
+          # packages are built on the oldest supported Ubuntu, because native
+          # modules only run on a glibc at least as new as the build's.
           - os: ubuntu-latest
+            runner: ubuntu-22.04
             args: --linux
           - os: macos-latest
+            runner: macos-latest
             args: --mac --arm64 --x64
           - os: windows-latest
+            runner: windows-latest
             args: --win
-    runs-on: ${{ matrix.os }}
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -95,3 +101,11 @@ jobs:
         run: npx electron-builder ${{ matrix.args }} --dir --publish never
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
+      - name: Native modules run on glibc 2.35 (Ubuntu 22.04, Debian 12) and newer
+        if: runner.os == 'Linux'
+        run: |
+          max=$(find release/linux-unpacked/resources -name '*.node' \
+              ! -path '*/prebuilds/win32-*' ! -path '*/prebuilds/darwin-*' -exec objdump -T {} + |
+            grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -n 1)
+          echo "Newest glibc symbol: $max"
+          test "$(printf '%s\nGLIBC_2.35\n' "$max" | sort -V | tail -n 1)" = GLIBC_2.35

@@ -45,7 +45,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-latest
+          # The oldest supported Ubuntu: native modules need a glibc at least as new as the build's.
+          - os: ubuntu-22.04
             args: --linux AppImage deb
             files: release/*.AppImage release/*.deb release/latest-linux.yml
           - os: macos-latest
