@@ -31,6 +31,7 @@ export type Action =
   | { type: 'closeTab'; terminalId: string }
   | { type: 'activateTab'; terminalId: string }
   | { type: 'renameTab'; terminalId: string; name: string }
+  | { type: 'zoomTab'; terminalId: string; zoom: number }
   /** Moves a tab to a position in a pane, possibly another one. */
   | { type: 'moveTab'; terminalId: string; paneId: string; toIndex: number }
   | { type: 'runPending'; terminalId: string }

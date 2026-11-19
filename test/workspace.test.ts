@@ -200,6 +200,18 @@ describe('workspace color', () => {
   });
 });
 
+describe('tab zoom', () => {
+  it('stores a zoom per terminal and drops it when reset', () => {
+    const { state, first } = setup();
+    applyAction(state, { type: 'zoomTab', terminalId: first, zoom: 3 }, '/');
+    expect(state.terminals[first].zoom).toBe(3);
+    applyAction(state, { type: 'zoomTab', terminalId: first, zoom: 0 }, '/');
+    expect(state.terminals[first].zoom).toBeUndefined();
+    applyAction(state, { type: 'zoomTab', terminalId: first, zoom: Number.NaN }, '/');
+    expect(state.terminals[first].zoom).toBeUndefined();
+  });
+});
+
 describe('scrollback files', () => {
   it('moves inline scrollback of old state files into separate files', async () => {
     const { readScrollback } = await import('../src/daemon/store');

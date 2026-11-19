@@ -169,14 +169,14 @@ export function clampZoom(settings: ZoomSettings, zoom: number): number {
   return Math.min(maxFontSize, Math.max(minFontSize, base + steps)) - base;
 }
 
-/** The font of the terminals: the current font with the zoom added to its size. */
-export function terminalFont(settings: ZoomSettings): Font {
+/** The font of a terminal: the current font with the zoom of all terminals and its own zoom added to its size. */
+export function terminalFont(settings: ZoomSettings, tabZoom = 0): Font {
   const font = resolveFont(settings);
-  return { ...font, fontSize: font.fontSize + clampZoom(settings, settings.zoom) };
+  return { ...font, fontSize: font.fontSize + clampZoom(settings, settings.zoom + tabZoom) };
 }
 
-/** The zoom as a percentage of the font's own size. */
-export function zoomPercent(settings: ZoomSettings): number {
+/** The zoom of a terminal as a percentage of the font's own size. */
+export function zoomPercent(settings: ZoomSettings, tabZoom = 0): number {
   const base = resolveFont(settings).fontSize;
-  return Math.round(((base + clampZoom(settings, settings.zoom)) / base) * 100);
+  return Math.round(((base + clampZoom(settings, settings.zoom + tabZoom)) / base) * 100);
 }

@@ -115,4 +115,11 @@ describe('zoom', () => {
     expect(clampZoom(defaultSettings, 100)).toBe(27);
     expect(terminalFont({ ...defaultSettings, zoom: Number.NaN }).fontSize).toBe(13);
   });
+
+  it('adds the zoom of a tab to the zoom of all terminals', async () => {
+    const { terminalFont, zoomPercent } = await import('../src/shared/themes');
+    expect(terminalFont({ ...defaultSettings, zoom: 2 }, 3).fontSize).toBe(18);
+    expect(terminalFont({ ...defaultSettings, zoom: 20 }, 20).fontSize).toBe(40);
+    expect(zoomPercent({ ...defaultSettings, zoom: 0 }, -3)).toBe(77);
+  });
 });

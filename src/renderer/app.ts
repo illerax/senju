@@ -440,7 +440,7 @@ function terminalView(terminalId: string): TerminalView {
         if (pane) markFocus(pane.id);
       },
       onContextMenu: (id, e) => void terminalMenu(id, e),
-      onZoom: (steps) => setZoom(settings.zoom + steps),
+      onZoom: (id, steps) => setTabZoom(id, tabZoom(id) + steps),
     });
     terminals.set(terminalId, view);
   }
@@ -462,7 +462,9 @@ async function terminalMenu(terminalId: string, e: MouseEvent): Promise<void> {
     { id: '-', label: '' },
     { id: 'closeTab', label: 'Close Tab', accelerator: keymap.accelerator('closeTab') },
     { id: 'closePane', label: 'Close Pane', accelerator: keymap.accelerator('closePane') },
-    ...(settings.zoom ? [{ id: '-', label: '' }, { id: 'resetZoom', label: 'Reset Zoom', accelerator: keymap.accelerator('resetZoom') }] : []),
+    ...(tabZoom(terminalId) || settings.zoom ? [{ id: '-', label: '' }] : []),
+    ...(tabZoom(terminalId) ? [{ id: 'resetZoom', label: 'Reset Tab Zoom', accelerator: keymap.accelerator('resetZoom') }] : []),
+    ...(settings.zoom || anyTabZoomed() ? [{ id: 'resetZoomAll', label: 'Reset Zoom of All Terminals', accelerator: keymap.accelerator('resetZoomAll') }] : []),
   ], e);
   if (choice === 'copy') void view?.copy();
   if (choice === 'paste') void view?.paste();
@@ -470,7 +472,8 @@ async function terminalMenu(terminalId: string, e: MouseEvent): Promise<void> {
   if (choice === 'right' || choice === 'down') act({ type: 'splitPane', paneId: pane.id, side: choice });
   if (choice === 'closeTab') void closeTab(terminalId);
   if (choice === 'closePane') void closePane(pane);
-  if (choice === 'resetZoom') setZoom(0);
+  if (choice === 'resetZoom') setTabZoom(terminalId, 0);
+  if (choice === 'resetZoomAll') resetAllZoom();
 }
 
 let zoomSave: ReturnType<typeof setTimeout> | null = null;
@@ -487,6 +490,39 @@ function setZoom(zoom: number): void {
     zoomSave = null;
     void senju.saveSettings({ zoom: settings.zoom });
   }, 500);
+}
+
+/** Tab zooms not sent to the daemon yet, which are newer than the ones in the state. */
+const tabZoomSends = new Map<string, { zoom: number; timer: ReturnType<typeof setTimeout> }>();
+
+/** Pixels a terminal is zoomed by, on top of the zoom of all terminals. */
+function tabZoom(terminalId: string): number {
+  return tabZoomSends.get(terminalId)?.zoom ?? state.terminals[terminalId]?.zoom ?? 0;
+}
+
+function anyTabZoomed(): boolean {
+  return Object.keys(state.terminals).some((id) => tabZoom(id));
+}
+
+/** Zooms one terminal; sent to the daemon once the zooming pauses, as a mouse wheel zooms in quick steps. */
+function setTabZoom(terminalId: string, zoom: number): void {
+  const next = clampZoom(settings, settings.zoom + zoom) - settings.zoom;
+  if (next === tabZoom(terminalId)) return;
+  const sending = tabZoomSends.get(terminalId);
+  if (sending) clearTimeout(sending.timer);
+  const timer = setTimeout(() => {
+    tabZoomSends.delete(terminalId);
+    act({ type: 'zoomTab', terminalId, zoom: next });
+  }, 300);
+  tabZoomSends.set(terminalId, { zoom: next, timer });
+  terminals.get(terminalId)?.setZoom(next);
+  renderStatus();
+}
+
+/** Returns every terminal to the font's own size. */
+function resetAllZoom(): void {
+  for (const id of Object.keys(state.terminals)) setTabZoom(id, 0);
+  setZoom(0);
 }
 
 async function closeTab(terminalId: string): Promise<void> {
@@ -573,6 +609,7 @@ class PaneView {
     for (const id of this.tabs.keys()) if (!node.tabs.includes(id)) this.tabs.delete(id);
 
     const view = terminalView(node.activeTab);
+    view.setZoom(tabZoom(node.activeTab));
     view.attach();
     if (this.body.firstChild !== view.element) this.body.replaceChildren(view.element);
     renderPending(view);
@@ -823,11 +860,17 @@ function renderStatus(): void {
     }
   }
   if (agents) parts.push(item('muted', `${agents} agent${agents === 1 ? '' : 's'}`));
-  if (settings.zoom) {
-    const key = keymap.accelerator('resetZoom');
-    const zoom = item('link status-zoom', `Zoom ${zoomPercent(settings)}%`, key ? `Reset zoom (${key})` : 'Reset zoom');
+  const focused = focusedPane()?.activeTab;
+  const zoomed = focused ? tabZoom(focused) : 0;
+  if (settings.zoom || zoomed) {
+    // The zoom of the focused tab; clicking returns it to the font's own size.
+    const key = keymap.accelerator(zoomed && !settings.zoom ? 'resetZoom' : 'resetZoomAll');
+    const zoom = item('link status-zoom', `Zoom ${zoomPercent(settings, zoomed)}%`, key ? `Reset zoom (${key})` : 'Reset zoom');
     zoom.insertAdjacentHTML('beforeend', iconSvg('close', 12));
-    zoom.addEventListener('click', () => setZoom(0));
+    zoom.addEventListener('click', () => {
+      if (focused) setTabZoom(focused, 0);
+      setZoom(0);
+    });
     parts.push(zoom);
   }
   bar.replaceChildren(...parts);
@@ -889,6 +932,9 @@ async function runCommand(command: Command): Promise<void> {
   const ctx = activeContext();
   const pane = focusedPane();
   const split = (side: SplitSide) => pane && act({ type: 'splitPane', paneId: pane.id, side });
+  const zoomTab = (zoom: (current: number) => number) => {
+    if (pane) setTabZoom(pane.activeTab, zoom(tabZoom(pane.activeTab)));
+  };
   const focus = (dir: 'left' | 'right' | 'up' | 'down') => {
     const id = neighbor(dir);
     if (!id) return;
@@ -997,11 +1043,17 @@ async function runCommand(command: Command): Promise<void> {
     case 'paste':
       return focusedTerminal()?.paste();
     case 'zoomIn':
-      return setZoom(settings.zoom + 1);
+      return zoomTab((z) => z + 1);
     case 'zoomOut':
-      return setZoom(settings.zoom - 1);
+      return zoomTab((z) => z - 1);
     case 'resetZoom':
-      return setZoom(0);
+      return zoomTab(() => 0);
+    case 'zoomInAll':
+      return setZoom(settings.zoom + 1);
+    case 'zoomOutAll':
+      return setZoom(settings.zoom - 1);
+    case 'resetZoomAll':
+      return resetAllZoom();
     default:
       if (pane) switchTab(pane.tabs[Number(command.slice('tab'.length)) - 1]);
   }

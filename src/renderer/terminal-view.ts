@@ -13,8 +13,8 @@ export interface TerminalHooks {
   onKey: (e: KeyboardEvent) => boolean;
   onFocus: (terminalId: string) => void;
   onContextMenu: (terminalId: string, e: MouseEvent) => void;
-  /** Zooms all terminals by a number of steps; negative zooms out. */
-  onZoom: (steps: number) => void;
+  /** Zooms this terminal by a number of steps; negative zooms out. */
+  onZoom: (terminalId: string, steps: number) => void;
 }
 
 /** Wheel distance, in pixels, of one zoom step. */
@@ -34,6 +34,9 @@ export class TerminalView {
    */
   private synced = false;
   private copyOnSelect: boolean;
+  private settings: Settings;
+  /** Pixels this terminal is zoomed by, on top of the zoom of all terminals. */
+  private zoom = 0;
   private lastSize = '';
 
   constructor(
@@ -42,6 +45,7 @@ export class TerminalView {
     platform: string,
     hooks: TerminalHooks,
   ) {
+    this.settings = settings;
     this.copyOnSelect = settings.copyOnSelect;
     this.element = document.createElement('div');
     this.element.className = 'terminal';
@@ -112,7 +116,7 @@ export class TerminalView {
         wheel += e.deltaMode === WheelEvent.DOM_DELTA_PIXEL ? e.deltaY : e.deltaY * ZOOM_WHEEL_STEP;
         if (Math.abs(wheel) < ZOOM_WHEEL_STEP) return;
         // One step per mouse wheel notch; small trackpad deltas add up to one.
-        hooks.onZoom(wheel < 0 ? 1 : -1);
+        hooks.onZoom(this.terminalId, wheel < 0 ? 1 : -1);
         wheel = 0;
       },
       { capture: true, passive: false },
@@ -157,9 +161,21 @@ export class TerminalView {
 
   /** Applies changed font and theme settings to the running terminal. */
   applySettings(settings: Settings): void {
+    this.settings = settings;
     this.copyOnSelect = settings.copyOnSelect;
     this.term.options.theme = resolveTheme(settings);
-    const font = terminalFont(settings);
+    this.applyFont();
+  }
+
+  /** Sets this terminal's own zoom, on top of the zoom of all terminals. */
+  setZoom(zoom: number): void {
+    if (zoom === this.zoom) return;
+    this.zoom = zoom;
+    this.applyFont();
+  }
+
+  private applyFont(): void {
+    const font = terminalFont(this.settings, this.zoom);
     // Setting an unchanged option still makes xterm re-measure, so compare first.
     if (this.term.options.fontFamily !== font.fontFamily) this.term.options.fontFamily = font.fontFamily;
     if (this.term.options.fontSize !== font.fontSize) this.term.options.fontSize = font.fontSize;
