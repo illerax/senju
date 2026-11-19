@@ -142,7 +142,7 @@ Change any of them in **Settings → Keyboard Shortcuts** (the gear at the botto
 
 ### Themes and fonts
 
-**Settings → Theme** offers Senju Dark, Tokyo Night, Catppuccin Mocha, Dracula, Nord, Gruvbox Dark, Solarized Dark and Light, and GitHub Light. **New theme from selected** copies the current theme into a custom one, where the background, foreground, cursor, selection and all 16 ANSI colors can be edited, and where the theme can have its own font: family (with suggestions from your installed monospace fonts), size, weight and line height. The default font on the same page is used by every theme that has none of its own.
+**Settings → Theme** offers Senju Dark, Tokyo Night, Catppuccin Mocha, Dracula, Nord, Gruvbox Dark, Solarized Dark and Light, and GitHub Light. **New theme from selected** copies the current theme into a custom one, where the background, foreground, cursor, selection and all 16 ANSI colors can be edited, and where the theme can have its own font: family, size, weight and line height. The default font on the same page is used by every theme that has none of its own. The family field takes any CSS font list; the arrow next to it lists your installed monospace fonts.
 
 ## How restore works
 

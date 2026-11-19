@@ -45,6 +45,7 @@ export function showMenu(items: MenuItem[], at: { x: number; y: number } | HTMLE
     const setActive = (level: Level, index: number) => {
       level.rows.forEach((row, i) => row.classList.toggle('active', i === index));
       level.active = index;
+      level.rows[index]?.scrollIntoView({ block: 'nearest' });
     };
 
     const closeAfter = (depth: number) => {
@@ -144,7 +145,10 @@ export function showMenu(items: MenuItem[], at: { x: number; y: number } | HTMLE
     const root = build(items, 0);
     if (at instanceof HTMLElement) {
       const rect = at.getBoundingClientRect();
-      place(root.element, { x: rect.left, y: rect.bottom + 4 });
+      // Opens above the element when it does not fit below, so it does not cover it.
+      const height = root.element.getBoundingClientRect().height;
+      const above = rect.bottom + 4 + height > window.innerHeight - 6 && rect.top - 4 - height >= 6;
+      place(root.element, { x: rect.left, y: above ? rect.top - 4 - height : rect.bottom + 4 });
     } else {
       place(root.element, at);
     }
