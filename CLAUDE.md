@@ -27,6 +27,7 @@ Everything in this repository must be in English: code, comments, identifiers, d
 
 - PRs are squash-merged; the PR title is the commit and must be a Conventional Commit (CI checks it). release-please derives versions and the changelog from it.
 - Pick the type by what users notice after updating (full table in README, "Releases and versioning"): `feat` new behavior; `fix`/`perf` corrections; `feat!` or a `BREAKING CHANGE:` paragraph when stored state, settings, recipes or default shortcuts stop working as before without a migration; `docs`/`test`/`ci`/`refactor`/`chore` ship nothing.
+- A new release stays a pre-release until every installer job has attached its files (`publish` in `release.yml`): apps and `install.sh` read the latest release, which excludes pre-releases. If an installer job fails, rerun it; the release becomes the latest after that.
 - `install.sh` (the README's install command) downloads release assets by name: keep it in sync with `artifactName` and the build targets in `package.json`.
 - A `PROTOCOL_VERSION` bump forces a daemon restart on update: at least `feat`, and say so in the PR description.
 

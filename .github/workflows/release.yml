@@ -29,6 +29,14 @@ jobs:
         with:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
+      # Installed apps look for updates in the latest release, which excludes
+      # pre-releases. Keep a new release a pre-release until every installer is
+      # attached, or apps find a version they cannot install yet.
+      - name: Hide the release from updates until its installers are attached
+        if: steps.release.outputs.release_created == 'true'
+        run: gh release edit "${{ steps.release.outputs.tag_name }}" --repo "$GITHUB_REPOSITORY" --prerelease
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       # The release PR is opened with GITHUB_TOKEN, which does not start CI on it;
       # start it explicitly so the checks main requires report on the PR.
       - name: Run CI on the release PR
@@ -76,5 +84,16 @@ jobs:
       - name: Attach installers and update metadata to the release
         shell: bash
         run: gh release upload "$TAG" ${{ matrix.files }} --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Makes a new release the latest once all its installers are attached. If one
+  # failed, the release stays a pre-release; rerun the failed job to publish it.
+  publish:
+    needs: [release-please, installers]
+    if: needs.release-please.outputs.created == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - run: gh release edit "${{ needs.release-please.outputs.tag }}" --repo "$GITHUB_REPOSITORY" --prerelease=false --latest
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
