@@ -85,36 +85,78 @@ async function inspectLinux(shellPid: number): Promise<TerminalProcesses> {
   return { shellCwd: shell?.cwd ?? null, shellEnv: shell?.env ?? null, job, jobChildren };
 }
 
-async function darwinCwd(pid: number): Promise<string | null> {
+// Every helper runs once per poll for all terminals and is killed when it hangs:
+// a slow lsof on a loaded Mac must not pile up processes and load it further.
+const DARWIN_TIMEOUT_MS = 5000;
+
+async function darwinOutput(file: string, args: string[]): Promise<string> {
   try {
-    const { stdout } = await run('lsof', ['-a', '-p', String(pid), '-d', 'cwd', '-Fn']);
-    const line = stdout.split('\n').find((l) => l.startsWith('n'));
-    return line ? line.slice(1) : null;
-  } catch {
-    return null;
+    return (await run(file, args, { timeout: DARWIN_TIMEOUT_MS, killSignal: 'SIGKILL', maxBuffer: 16 * 1024 * 1024 })).stdout;
+  } catch (err) {
+    // lsof exits with 1 when one of the processes is gone but still lists the others.
+    const stdout = (err as { stdout?: unknown }).stdout;
+    return typeof stdout === 'string' ? stdout : '';
   }
 }
 
-async function inspectDarwin(shellPid: number): Promise<TerminalProcesses> {
-  try {
-    const { stdout } = await run('ps', ['-o', 'pgid=,tpgid=', '-p', String(shellPid)]);
-    const [pgrp, tpgid] = stdout.trim().split(/\s+/).map(Number);
-    const shellCwd = await darwinCwd(shellPid);
-    let job: ProcessInfo | null = null;
-    if (tpgid > 0 && tpgid !== pgrp) {
-      const { stdout: args } = await run('ps', ['-ww', '-o', 'args=', '-p', String(tpgid)]).catch(() => ({ stdout: '' }));
-      const argv = args.trim().split(/\s+/).filter(Boolean);
-      if (argv.length > 0) job = { pid: tpgid, argv, cwd: await darwinCwd(tpgid), env: null };
+export interface DarwinProcess {
+  pgid: number;
+  tpgid: number;
+  argv: string[];
+}
+
+/** Parses `ps -o pid=,pgid=,tpgid=,args=`. */
+export function parsePs(stdout: string): Map<number, DarwinProcess> {
+  const processes = new Map<number, DarwinProcess>();
+  for (const line of stdout.split('\n')) {
+    const match = /^\s*(\d+)\s+(-?\d+)\s+(-?\d+)\s*(.*)$/.exec(line);
+    if (!match) continue;
+    const argv = match[4].trim().split(/\s+/).filter(Boolean);
+    processes.set(Number(match[1]), { pgid: Number(match[2]), tpgid: Number(match[3]), argv });
+  }
+  return processes;
+}
+
+/** Parses `lsof -d cwd -Fpn`: a `p<pid>` line followed by an `n<path>` line. */
+export function parseLsofCwd(stdout: string): Map<number, string> {
+  const cwds = new Map<number, string>();
+  let pid = 0;
+  for (const line of stdout.split('\n')) {
+    if (line.startsWith('p')) pid = Number(line.slice(1));
+    else if (line.startsWith('n') && pid > 0 && !cwds.has(pid)) cwds.set(pid, line.slice(1));
+  }
+  return cwds;
+}
+
+async function inspectDarwin(shellPids: number[]): Promise<Map<number, TerminalProcesses>> {
+  const result = new Map<number, TerminalProcesses>();
+  if (shellPids.length === 0) return result;
+  const processes = parsePs(await darwinOutput('ps', ['-A', '-ww', '-o', 'pid=,pgid=,tpgid=,args=']));
+  const jobs = new Map<number, number>();
+  for (const pid of shellPids) {
+    const shell = processes.get(pid);
+    if (shell && shell.tpgid > 0 && shell.tpgid !== shell.pgid && processes.get(shell.tpgid)?.argv.length) jobs.set(pid, shell.tpgid);
+  }
+  // -b and -w keep lsof away from calls that block on unresponsive (network) mounts.
+  const pids = [...new Set([...shellPids, ...jobs.values()])].filter((pid) => processes.has(pid));
+  const cwds = pids.length > 0 ? parseLsofCwd(await darwinOutput('lsof', ['-b', '-w', '-a', '-d', 'cwd', '-Fpn', '-p', pids.join(',')])) : new Map<number, string>();
+  for (const pid of shellPids) {
+    if (!processes.has(pid)) {
+      result.set(pid, none);
+      continue;
     }
-    return { shellCwd, shellEnv: null, job, jobChildren: [] };
-  } catch {
-    return none;
+    const jobPid = jobs.get(pid);
+    const job = jobPid === undefined ? null : { pid: jobPid, argv: processes.get(jobPid)!.argv, cwd: cwds.get(jobPid) ?? null, env: null };
+    result.set(pid, { shellCwd: cwds.get(pid) ?? null, shellEnv: null, job, jobChildren: [] });
   }
+  return result;
 }
 
-export async function inspectTerminal(shellPid: number): Promise<TerminalProcesses> {
-  if (process.platform === 'linux') return inspectLinux(shellPid);
-  if (process.platform === 'darwin') return inspectDarwin(shellPid);
+/** Inspects the terminals with the given shell pids; the result has an entry for each pid. */
+export async function inspectTerminals(shellPids: number[]): Promise<Map<number, TerminalProcesses>> {
+  if (process.platform === 'darwin') return inspectDarwin(shellPids);
   // Windows (ConPTY) does not expose the foreground process; only the initial directory is tracked.
-  return none;
+  const inspect = process.platform === 'linux' ? inspectLinux : async () => none;
+  const infos = await Promise.all(shellPids.map(inspect));
+  return new Map(shellPids.map((pid, i) => [pid, infos[i]]));
 }

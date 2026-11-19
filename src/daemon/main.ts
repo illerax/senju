@@ -11,7 +11,7 @@ import { paths } from '../shared/paths';
 import { loadSettings, type Settings } from '../shared/settings';
 import type { AppState, JobState, TerminalState } from '../shared/types';
 import { baseEnv, TerminalSession } from './terminal';
-import { inspectTerminal, type ProcessInfo } from './procinfo';
+import { inspectTerminals, type ProcessInfo } from './procinfo';
 import { listSessions, loadRecipes, matchRecipe, requiredFiles, sessionFromArgs, sessionFromPidFile, type Recipe } from './recipes';
 import { planRestore } from './restore';
 import { envDiff } from './shellquote';
@@ -30,6 +30,12 @@ const SCROLLBACK_QUIET_MS = 15000;
 const SCROLLBACK_BUSY_MS = 60000;
 /** How long a vanished job or shell is kept, so processes killed by a shutdown are still restored. */
 const EXIT_GRACE_MS = 3000;
+
+/** Runs a periodic task, starting the next run only after the previous one has finished. */
+function repeat(task: () => Promise<void>, ms: number): void {
+  const next = () => setTimeout(() => void task().catch((err) => log('periodic task failed', err)).finally(next), ms);
+  next();
+}
 
 function log(...args: unknown[]): void {
   console.log(new Date().toISOString(), ...args);
@@ -120,9 +126,9 @@ class Daemon {
     for (const id of Object.keys(this.state.terminals)) this.spawn(id, true, present);
     this.saveNow();
     this.listen();
-    setInterval(() => void this.pollProcesses(), POLL_MS);
-    setInterval(() => void this.pollSessions(), SESSION_POLL_MS);
-    setInterval(() => void this.persistScrollback(), SCROLLBACK_TICK_MS);
+    repeat(() => this.pollProcesses(), POLL_MS);
+    repeat(() => this.pollSessions(), SESSION_POLL_MS);
+    repeat(() => this.persistScrollback(), SCROLLBACK_TICK_MS);
     for (const signal of ['SIGTERM', 'SIGINT', 'SIGHUP'] as const) {
       process.on(signal, () => void this.shutdown(false));
     }
@@ -226,13 +232,14 @@ class Daemon {
   private async pollProcesses(): Promise<void> {
     if (this.shuttingDown) return;
     let changed = false;
+    const sessions = [...this.sessions].filter(([terminalId, session]) => !session.exited && this.state.terminals[terminalId] && this.tracked.has(terminalId));
+    const infos = await inspectTerminals(sessions.map(([, session]) => session.pid));
     await Promise.all(
-      [...this.sessions].map(async ([terminalId, session]) => {
-        if (session.exited) return;
+      sessions.map(async ([terminalId, session]) => {
         const terminal = this.state.terminals[terminalId];
         const tracked = this.tracked.get(terminalId);
-        if (!terminal || !tracked) return;
-        const info = await inspectTerminal(session.pid);
+        const info = infos.get(session.pid);
+        if (!terminal || !tracked || !info) return;
         if (this.shuttingDown || this.sessions.get(terminalId) !== session) return;
 
         if (info.shellCwd && info.shellCwd !== terminal.cwd) {
