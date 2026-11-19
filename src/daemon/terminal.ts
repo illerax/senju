@@ -7,6 +7,7 @@ import * as pty from 'node-pty';
 import { Terminal } from '@xterm/headless';
 import { SerializeAddon } from '@xterm/addon-serialize';
 import { Unicode11Addon } from '@xterm/addon-unicode11';
+import { withoutAppImagePaths } from '../shared/env';
 import type { Settings } from '../shared/settings';
 
 export interface TerminalOptions {
@@ -32,14 +33,18 @@ export function defaultShell(settings: Settings): { file: string; args: string[]
   return { file: process.env.SHELL || '/bin/sh', args: settings.shellArgs ?? (process.platform === 'darwin' ? ['-l'] : []) };
 }
 
-/** The daemon's own environment, without variables that only make sense for Electron. */
+/**
+ * The daemon's own environment, without variables that only make sense for
+ * Electron and without AppImage mounts, which a daemon started by an older
+ * version may still have.
+ */
 export function baseEnv(): Record<string, string> {
   const env: Record<string, string> = {};
   for (const [key, value] of Object.entries(process.env)) {
     if (value === undefined || key.startsWith('ELECTRON_') || key === 'CHROME_DESKTOP' || key === 'GOOGLE_API_KEY') continue;
     env[key] = value;
   }
-  return env;
+  return withoutAppImagePaths(env);
 }
 
 /** Output within this time marks a program as busy rather than waiting. */
@@ -96,9 +101,9 @@ export class TerminalSession {
       cols: opts.cols,
       rows: opts.rows,
       cwd: start.cwd,
+      // Saved environments of terminals from older versions may still point into AppImage mounts.
       env: {
-        ...baseEnv(),
-        ...opts.env,
+        ...withoutAppImagePaths({ ...baseEnv(), ...opts.env }),
         TERM: 'xterm-256color',
         COLORTERM: 'truecolor',
         TERM_PROGRAM: 'senju',

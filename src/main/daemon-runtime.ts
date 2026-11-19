@@ -11,6 +11,7 @@ import path from 'node:path';
 import { app } from 'electron';
 import { BUILD_ID } from '../shared/build';
 import { paths } from '../shared/paths';
+import { withoutAppImagePaths } from '../shared/env';
 import { appBundle } from '../shared/update';
 
 export interface DaemonLauncher {
@@ -24,22 +25,14 @@ const KEEP_COPIES = 2;
 
 /**
  * The daemon's environment: the app's own, without what the AppImage runtime
- * adds, which would point the user's shells into a mount that goes away.
+ * adds, which would point the user's shells into a mount that goes away. That
+ * includes mounts of AppImages that started this one, such as the previous
+ * version of Senju after an update.
  */
 function daemonEnv(): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...process.env, ELECTRON_RUN_AS_NODE: '1' };
-  const appDir = process.env.APPDIR;
   for (const key of ['APPIMAGE', 'APPDIR', 'ARGV0', 'OWD', 'CHROME_DESKTOP']) delete env[key];
-  if (appDir) {
-    for (const key of ['LD_LIBRARY_PATH', 'PATH', 'XDG_DATA_DIRS', 'GSETTINGS_SCHEMA_DIR', 'PERLLIB', 'QT_PLUGIN_PATH']) {
-      const value = env[key];
-      if (!value) continue;
-      const kept = value.split(path.delimiter).filter((part) => part && !part.startsWith(appDir));
-      if (kept.length) env[key] = kept.join(path.delimiter);
-      else delete env[key];
-    }
-  }
-  return env;
+  return withoutAppImagePaths(env, process.env.APPDIR);
 }
 
 export function needsCopy(): boolean {
