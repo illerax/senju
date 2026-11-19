@@ -1,0 +1,49 @@
+name: Install script
+
+# Installs the latest release with install.sh, the way the README tells users
+# to, and removes it again.
+on:
+  pull_request:
+    paths: [install.sh, .github/workflows/install-script.yml]
+  push:
+    branches: [main]
+    paths: [install.sh, .github/workflows/install-script.yml]
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  install:
+    name: Install script (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Lint
+        if: runner.os == 'Linux'
+        run: shellcheck -s sh install.sh
+      - name: Install
+        run: sh < install.sh
+      - name: Check the installed app
+        run: |
+          if [ "$RUNNER_OS" = Linux ]; then
+            test -x ~/.local/bin/senju
+            grep -q "Exec=\"$HOME/.local/bin/senju\"" ~/.local/share/applications/senju.desktop
+            test -f ~/.local/share/icons/hicolor/512x512/apps/senju.png
+          else
+            test -x /Applications/Senju.app/Contents/MacOS/Senju
+            ! xattr -p com.apple.quarantine /Applications/Senju.app 2>/dev/null
+          fi
+      - name: Install again over the existing app
+        run: sh install.sh
+      - name: Uninstall
+        run: |
+          sh install.sh --uninstall
+          test ! -e ~/.local/bin/senju
+          test ! -e /Applications/Senju.app
