@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { withoutAppImagePaths } from '../src/shared/env';
 
+// Windows has no AppImages and leaves the environment as it is.
+const unix = process.platform !== 'win32';
+
 describe('withoutAppImagePaths', () => {
-  it('drops entries in any AppImage mount, not only its own', () => {
+  it.runIf(unix)('drops entries in any AppImage mount, not only its own', () => {
     const env = {
       LD_LIBRARY_PATH: '/tmp/.mount_senjurn75lc/usr/lib:/tmp/.mount_senjuPHc7qf/usr/lib',
       PATH: '/tmp/.mount_senjuWAscx2:/home/me/bin:/usr/bin',
@@ -18,9 +21,14 @@ describe('withoutAppImagePaths', () => {
     });
   });
 
-  it('drops entries in the given app folder, which an extracted AppImage has instead of a mount', () => {
+  it.runIf(unix)('drops entries in the given app folder, which an extracted AppImage has instead of a mount', () => {
     const env = { PATH: '/tmp/appimage_extracted_1/usr/bin:/usr/bin', OTHER: '/tmp/appimage_extracted_10/x' };
     expect(withoutAppImagePaths(env, '/tmp/appimage_extracted_1')).toEqual({ PATH: '/usr/bin', OTHER: '/tmp/appimage_extracted_10/x' });
+  });
+
+  it.runIf(!unix)('changes nothing on Windows', () => {
+    const env = { PATH: 'C:\\Windows;C:\\tmp\\.mount_x', OTHER: '/tmp/.mount_senju/usr/lib' };
+    expect(withoutAppImagePaths(env)).toEqual(env);
   });
 
   it('leaves values without mount entries alone', () => {
