@@ -872,6 +872,9 @@ body.resizing-column * {
   z-index: 100;
   min-width: 210px;
   max-width: 320px;
+  /* Long lists, such as installed fonts, scroll instead of leaving the window. */
+  max-height: calc(100vh - 12px);
+  overflow-y: auto;
   padding: 4px;
   background: var(--elevated);
   border: 1px solid var(--line-strong);
@@ -1422,6 +1425,20 @@ select.settings-input {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 90px 140px 100px;
   gap: 12px;
+}
+
+.font-family {
+  position: relative;
+}
+
+.font-family .settings-input {
+  padding-right: 30px;
+}
+
+.font-family-open {
+  position: absolute;
+  top: 2px;
+  right: 2px;
 }
 
 .theme-font .settings-hint {

@@ -7,6 +7,7 @@ import type { UpdateAction, UpdateStatus } from '../shared/update';
 import { builtinThemes, resolveFont, resolveTheme, themeKeys, type Font, type Theme, type ThemeColor } from '../shared/themes';
 import { openColorPicker } from './color-picker';
 import { iconButton, iconSvg } from './icons';
+import { showMenu, type MenuItem } from './menu';
 import { eventToAccelerator, isRiskyAccelerator, Keymap, normalizeAccelerator } from './keymap';
 
 export interface AppInfo {
@@ -616,15 +617,38 @@ function fontFields(values: Partial<Font>, inherited: Font | null, onChange: (pa
   const box = el('div', 'font-fields');
   const family = el('input', 'settings-input');
   family.type = 'text';
-  family.setAttribute('list', 'senju-fonts');
   family.value = values.fontFamily ?? '';
   family.placeholder = inherited?.fontFamily ?? '';
-  family.addEventListener('focus', () => void loadMonospaceFonts());
   family.addEventListener('change', () => {
     const value = cssFamily(family.value);
     family.value = value;
     onChange({ fontFamily: value || undefined });
   });
+  // The installed fonts open in an app-drawn menu: a native datalist only
+  // suggests entries matching the text, and the field holds a whole font stack.
+  const pickFamily = async () => {
+    const fonts = await monospaceFonts();
+    const current = firstFamily(family.value);
+    const items: MenuItem[] = fonts.map((name) => ({ id: name, label: name, checked: name === current }));
+    if (inherited) items.unshift({ id: '', label: 'Default', checked: family.value === '' }, { id: '-', label: '' });
+    if (fonts.length === 0) items.push({ id: 'none', label: 'No monospace fonts found', enabled: false });
+    const picked = await showMenu(items, family);
+    if (picked === null) return;
+    family.value = picked && cssFamily(picked);
+    onChange({ fontFamily: family.value || undefined });
+  };
+  const open = iconButton('chevronDown', 'Installed fonts', 'font-family-open');
+  open.addEventListener('click', (e) => {
+    e.preventDefault();
+    void pickFamily();
+  });
+  family.addEventListener('keydown', (e) => {
+    if (e.key !== 'ArrowDown') return;
+    e.preventDefault();
+    void pickFamily();
+  });
+  const familyBox = el('div', 'font-family');
+  familyBox.append(family, open);
 
   const number = (value: number | undefined, placeholder: number | undefined, min: number, max: number, step: number, key: 'fontSize' | 'lineHeight') => {
     const input = el('input', 'settings-input small');
@@ -650,7 +674,7 @@ function fontFields(values: Partial<Font>, inherited: Font | null, onChange: (pa
   weight.addEventListener('change', () => onChange({ fontWeight: weight.value ? Number(weight.value) : undefined }));
 
   box.append(
-    field('Family', family),
+    field('Family', familyBox),
     field('Size', number(values.fontSize, inherited?.fontSize, 6, 40, 1, 'fontSize')),
     field('Weight', weight),
     field('Line height', number(values.lineHeight, inherited?.lineHeight, 0.8, 2, 0.05, 'lineHeight')),
@@ -658,31 +682,30 @@ function fontFields(values: Partial<Font>, inherited: Font | null, onChange: (pa
   return box;
 }
 
-let fontsLoaded = false;
+/** The first family of a CSS font stack, without quotes. */
+function firstFamily(stack: string): string {
+  return (stack.split(',')[0] ?? '').trim().replace(/^['"]|['"]$/g, '');
+}
 
-/** Fills the family suggestions with installed monospace fonts, measured on a canvas. */
-async function loadMonospaceFonts(): Promise<void> {
-  if (fontsLoaded) return;
-  fontsLoaded = true;
-  const query = (window as unknown as { queryLocalFonts?: () => Promise<{ family: string }[]> }).queryLocalFonts;
-  if (!query) return;
-  let families: string[];
-  try {
-    families = [...new Set((await query()).map((f) => f.family))].sort((a, b) => a.localeCompare(b));
-  } catch {
-    return;
-  }
-  const ctx = document.createElement('canvas').getContext('2d');
-  if (!ctx) return;
-  const mono = families.filter((family) => {
-    ctx.font = `20px '${family}', serif`;
-    return Math.abs(ctx.measureText('iiiiii').width - ctx.measureText('WWWWWW').width) < 0.5;
-  });
-  let list = document.getElementById('senju-fonts');
-  if (!list) {
-    list = el('datalist');
-    list.id = 'senju-fonts';
-    document.body.append(list);
-  }
-  list.replaceChildren(...mono.map((family) => new Option(family, family)));
+let fontList: Promise<string[]> | null = null;
+
+/** Installed monospace fonts, measured on a canvas; looked up once. */
+function monospaceFonts(): Promise<string[]> {
+  fontList ??= (async () => {
+    const query = (window as unknown as { queryLocalFonts?: () => Promise<{ family: string }[]> }).queryLocalFonts;
+    if (!query) return [];
+    let families: string[];
+    try {
+      families = [...new Set((await query()).map((f) => f.family))].sort((a, b) => a.localeCompare(b));
+    } catch {
+      return [];
+    }
+    const ctx = document.createElement('canvas').getContext('2d');
+    if (!ctx) return [];
+    return families.filter((family) => {
+      ctx.font = `20px '${family}', serif`;
+      return Math.abs(ctx.measureText('iiiiii').width - ctx.measureText('WWWWWW').width) < 0.5;
+    });
+  })();
+  return fontList;
 }
