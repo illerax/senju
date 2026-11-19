@@ -224,6 +224,23 @@ await shot('4-restored.png');
 const restored = await page.locator('#workspace').innerText();
 report('scrollback restored', restored.includes('restored'));
 report('run again offered', (await page.locator('.terminal-overlay.visible').count()) === 1);
+
+// A program left mouse tracking on and the mouse moves while the daemon
+// restarts: its reports must not reach the new shell and spoil the restored command.
+await page.locator('.pane.focused .xterm').click();
+await page.keyboard.press('Control+Shift+T');
+await sleep(800);
+await page.keyboard.type("printf '\\e[?1003h\\e[?1006h'; tail -f /dev/null\n");
+await sleep(2500);
+const tailRunning = (s) => Object.values(s.terminals).some((t) => t.job?.argv.join(' ') === 'tail -f /dev/null');
+const mouseBox = await page.locator('.pane.focused .xterm').boundingBox();
+await page.evaluate(() => window.senju.restartDaemon());
+for (let i = 0, until = Date.now() + 6000; Date.now() < until; i++) {
+  await page.mouse.move(mouseBox.x + 100 + (i % 40) * 5, mouseBox.y + 100 + (i % 7) * 10);
+  await sleep(15);
+}
+await sleep(2500);
+report('restored command survives mouse reports during a daemon restart', tailRunning(await state()));
 await stopAll(app, page);
 fs.rmSync(home, { recursive: true, force: true });
 console.log(`screenshots in ${out}`);

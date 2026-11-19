@@ -27,6 +27,12 @@ export class TerminalView {
   readonly term: Terminal;
   private readonly fitAddon = new FitAddon();
   private attached = false;
+  /**
+   * The screen shows the daemon's snapshot. Until then it may hold the modes
+   * of a program from before a daemon restart, such as mouse tracking, and
+   * the reports they produce would land in the new shell as typed text.
+   */
+  private synced = false;
   private copyOnSelect: boolean;
   private lastSize = '';
 
@@ -74,7 +80,7 @@ export class TerminalView {
     this.term.open(this.host);
 
     this.term.attachCustomKeyEventHandler((e) => e.type !== 'keydown' || !hooks.onKey(e));
-    this.term.onData((data) => senju.send({ type: 'input', terminalId, data }));
+    this.term.onData((data) => this.synced && senju.send({ type: 'input', terminalId, data }));
     this.term.textarea?.addEventListener('focus', () => hooks.onFocus(terminalId));
     this.term.onSelectionChange(() => {
       const text = this.term.getSelection();
@@ -125,12 +131,14 @@ export class TerminalView {
   /** The daemon connection was replaced; the next attach starts from a fresh snapshot. */
   reset(): void {
     this.attached = false;
+    this.synced = false;
     this.lastSize = '';
   }
 
   onSnapshot(data: string): void {
     this.term.reset();
     this.term.write(data);
+    this.synced = true;
   }
 
   onData(data: string): void {
