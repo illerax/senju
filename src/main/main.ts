@@ -172,10 +172,11 @@ function registerIpc(): void {
     if (action === 'check') void updater.check();
     if (action === 'download') void updater.download();
     if (action === 'install') {
-      // Leave the daemon running: the new version reconnects to it.
-      quitting = true;
-      daemon.close();
-      updater.install();
+      updater.install(() => {
+        // Leave the daemon running: the new version reconnects to it.
+        quitting = true;
+        daemon.close();
+      });
     }
     if (action === 'dismiss') updater.dismiss();
   });
