@@ -156,9 +156,12 @@ page.on('dialog', (d) => {
 });
 await page.locator('.pane.focused .xterm').click();
 await page.keyboard.type(`printf '\\e]8;;https://example.com/osc8\\e\\\\%s-%s\\e]8;;\\e\\\\\\n' open link\n`);
-await sleep(600);
-const linkBox = await page.evaluate(() => {
-  const row = [...document.querySelectorAll('.pane.focused .xterm-rows > div')].find((r) => r.textContent.startsWith('open-link'));
+const linkRow = await page.waitForFunction(
+  () => [...document.querySelectorAll('.pane.focused .xterm-rows > div')].find((r) => r.textContent.startsWith('open-link')),
+  null,
+  { timeout: 10000 },
+);
+const linkBox = await linkRow.evaluate((row) => {
   const range = document.createRange();
   range.selectNodeContents(row);
   const r = range.getBoundingClientRect();
