@@ -44,6 +44,8 @@ export type ClientMessage =
   | { type: 'attach'; terminalId: string }
   | { type: 'input'; terminalId: string; data: string }
   | { type: 'resize'; terminalId: string; cols: number; rows: number }
+  /** Asks for the last lines on the screen of some terminals, as plain text. */
+  | { type: 'peek'; terminalIds: string[]; lines: number }
   /** Saves state and stops the daemon together with all terminal processes; they are restored on next start. */
   | { type: 'shutdown' };
 
@@ -52,4 +54,6 @@ export type DaemonMessage =
   | { type: 'state'; state: AppState }
   | { type: 'snapshot'; terminalId: string; data: string }
   | { type: 'data'; terminalId: string; data: string }
+  /** The last non-empty lines on each terminal's screen. */
+  | { type: 'peek'; screens: Record<string, string[]> }
   | { type: 'error'; message: string };

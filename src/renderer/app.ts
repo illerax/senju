@@ -24,6 +24,7 @@ import { Keymap, type Command } from './keymap';
 import { showMenu, type MenuItem } from './menu';
 import { SettingsView } from './settings-view';
 import { TerminalView } from './terminal-view';
+import { Overview, OVERVIEW_LINES, type OverviewCard } from './overview';
 import { measureSwitch, nameTerminals, note, report, startPerfMonitor, terminalName } from './perf-monitor';
 
 const SLOW_RENDER_MS = 100;
@@ -954,7 +955,12 @@ function renderStatus(): void {
     count.addEventListener('click', () => nextAttention());
     parts.push(count);
   }
-  if (agents) parts.push(item('muted', `${agents} agent${agents === 1 ? '' : 's'}`));
+  if (agents) {
+    const key = keymap.accelerator('toggleOverview');
+    const all = item('muted link', `${agents} agent${agents === 1 ? '' : 's'}`, key ? `Show all agents (${key})` : 'Show all agents');
+    all.addEventListener('click', () => overview.toggle());
+    parts.push(all);
+  }
   const focused = focusedPane()?.activeTab;
   const zoomed = focused ? tabZoom(focused) : 0;
   if (settings.zoom || zoomed) {
@@ -984,6 +990,8 @@ function render(force = false): void {
   else renderSidebar();
   renderWorkspace(force);
   checkAttention();
+  if (overview.isOpen && state.activeWorkspaceId !== overviewWorkspace) overview.close();
+  overview.update();
   renderStatus();
   renderTitle();
 }
@@ -1006,7 +1014,7 @@ let attentionTimer: ReturnType<typeof setTimeout> | null = null;
 /** The terminals on screen: the active tab of each pane in the active workspace, except under a maximized pane. */
 function visibleTerminals(): Set<string> {
   const workspace = activeContext()?.workspace;
-  if (!workspace) return new Set();
+  if (!workspace || overview.isOpen) return new Set();
   const shown = maximized.get(workspace.id)?.paneId;
   return new Set(panes(workspace.root).filter((p) => !shown || p.id === shown).map((p) => p.activeTab));
 }
@@ -1063,8 +1071,51 @@ function waitedFor(terminalId: string): string | null {
 
 // The wait times in the status bar move on.
 setInterval(() => {
-  if (waitingAgents.length && state) renderStatus();
+  if (!waitingAgents.length || !state) return;
+  renderStatus();
+  overview.update();
 }, 15_000);
+
+// --- overview of all agents ---
+
+const overview = new Overview({
+  cards: overviewCards,
+  peek: (terminalIds) => senju.send({ type: 'peek', terminalIds, lines: OVERVIEW_LINES }),
+  open: (terminalId) => goToTerminal(terminalId),
+  onToggle: (open) => {
+    document.body.classList.toggle('overview-open', open);
+    overviewWorkspace = state?.activeWorkspaceId ?? null;
+    if (!open) focusedTerminal()?.focus();
+    refreshAttention();
+  },
+});
+/** The workspace active when the overview opened; showing another one closes it. */
+let overviewWorkspace: string | null = null;
+
+/** Every agent: those waiting for the user first, longest wait first, then the rest in sidebar order. */
+function overviewCards(): OverviewCard[] {
+  const ordered: string[] = [];
+  for (const group of state.groups) for (const workspace of group.workspaces) ordered.push(...terminalIds(workspace.root));
+  const queue = waitingAgents.map((w) => w.terminalId);
+  const ids = [...queue, ...ordered.filter((id) => !queue.includes(id))];
+  return ids.flatMap((terminalId) => {
+    const terminal = state.terminals[terminalId];
+    const status = agentStatus(terminal);
+    const place = terminalPlace(terminalId);
+    if (!status || !place) return [];
+    return [
+      {
+        terminalId,
+        name: tabLabel(terminal),
+        kind: status.kind,
+        text: status.text,
+        waited: waitedFor(terminalId),
+        activity: status.activity,
+        place: `${place.group.name} / ${place.workspace.name}`,
+      },
+    ];
+  });
+}
 
 /** Checks again outside a render: the window gained or lost focus, or a guessed wait lasted. */
 function refreshAttention(): void {
@@ -1077,6 +1128,7 @@ function refreshAttention(): void {
 /** Shows the agent's terminal: its workspace, pane and tab. */
 function goToTerminal(terminalId: string): void {
   if (!state.terminals[terminalId]) return;
+  overview.close();
   act({ type: 'activateTab', terminalId });
   terminals.get(terminalId)?.focus();
 }
@@ -1223,6 +1275,8 @@ async function runCommand(command: Command): Promise<void> {
     case 'closePane':
       if (pane) return closePane(pane);
       return;
+    case 'toggleOverview':
+      return overview.toggle();
     case 'nextAttention':
       return nextAttention();
     case 'toggleMaximize':
@@ -1306,6 +1360,9 @@ function onMessage(msg: UiMessage): void {
     }
     case 'snapshot':
       terminals.get(msg.terminalId)?.onSnapshot(msg.data);
+      break;
+    case 'peek':
+      overview.screens(msg.screens);
       break;
     case 'data':
       terminals.get(msg.terminalId)?.onData(msg.data);
@@ -1433,6 +1490,10 @@ async function main(): Promise<void> {
   $('add-group').replaceWith(Object.assign(iconButton('plus', 'New group'), { id: 'add-group' }));
   $('toggle-sidebar').replaceWith(Object.assign(iconButton('sidebar', 'Hide sidebar'), { id: 'toggle-sidebar' }));
   $('open-settings').replaceWith(Object.assign(iconButton('gear', 'Settings'), { id: 'open-settings' }));
+  $('workspace').after(overview.element);
+  $('add-group').before(Object.assign(iconButton('grid', 'All agents'), { id: 'show-overview' }));
+  $('show-overview').addEventListener('click', () => overview.toggle());
+  tip($('show-overview'), 'All agents', 'toggleOverview');
   $('add-group').addEventListener('click', () => void newGroup());
   $('toggle-sidebar').addEventListener('click', () => setSidebarHidden(!state.ui.sidebarHidden));
   tip($('add-group'), 'New group', 'newGroup');

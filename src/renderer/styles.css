@@ -1627,3 +1627,133 @@ select.settings-input {
   margin: 0;
   accent-color: var(--accent);
 }
+
+/* Overview of all agents: replaces the workspace while open. */
+
+body.overview-open #workspace {
+  display: none;
+}
+
+.overview {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  padding: 14px 20px 20px;
+  background: var(--bg);
+}
+
+.overview[hidden] {
+  display: none;
+}
+
+.overview-head {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.overview-head h2 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.overview-hint,
+.overview-empty {
+  color: var(--faint);
+}
+
+.overview-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+  gap: 12px;
+}
+
+.overview-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  padding: 10px 12px;
+  font: inherit;
+  text-align: left;
+  color: var(--fg);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  cursor: pointer;
+}
+
+.overview-card:hover {
+  background: var(--hover);
+  border-color: var(--line-strong);
+}
+
+.overview-card:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.overview-card.waiting {
+  border-color: color-mix(in srgb, var(--waiting) 55%, transparent);
+}
+
+.overview-card-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.overview-name {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.overview-status {
+  white-space: nowrap;
+}
+
+.overview-status::before {
+  content: '●';
+  margin-right: 5px;
+}
+
+.overview-card.working .overview-status::before {
+  color: var(--accent-text);
+}
+
+.overview-card.waiting .overview-status::before {
+  color: var(--waiting);
+}
+
+.overview-card.done .overview-status::before {
+  color: var(--done);
+}
+
+.overview-place {
+  margin-left: auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--faint);
+}
+
+.overview-activity {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: 11.5px var(--mono);
+  color: var(--muted);
+}
+
+.overview-screen {
+  height: calc(14 * 1.4em);
+  margin: 0;
+  overflow: hidden;
+  font: 11px/1.4 var(--mono);
+  white-space: pre;
+  color: var(--muted);
+}
+

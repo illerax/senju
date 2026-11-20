@@ -192,6 +192,15 @@ export class TerminalSession {
     return () => this.listeners.delete(listener);
   }
 
+  /** The screen's last lines up to its last non-empty one, as plain text: what an overview shows. */
+  peek(lines: number): string[] {
+    const buffer = this.term.buffer.active;
+    const screen: string[] = [];
+    for (let row = 0; row < this.term.rows; row++) screen.push(buffer.getLine(buffer.baseY + row)?.translateToString(true) ?? '');
+    while (screen.length && !screen[screen.length - 1].trim()) screen.pop();
+    return screen.slice(-lines);
+  }
+
   /** Scrollback for persistence: the normal buffer only, without terminal modes. */
   persistedScrollback(lines: number): Promise<string> {
     return new Promise((resolve) => {

@@ -636,6 +636,16 @@ class Daemon {
         }
         break;
       }
+      case 'peek': {
+        const screens: Record<string, string[]> = {};
+        const lines = Math.max(1, Math.min(Number(msg.lines) || 0, 100));
+        for (const id of Array.isArray(msg.terminalIds) ? msg.terminalIds : []) {
+          const session = this.sessions.get(id);
+          if (session) screens[id] = session.peek(lines);
+        }
+        client.send({ type: 'peek', screens });
+        break;
+      }
       case 'shutdown':
         void this.shutdown(true);
         break;
