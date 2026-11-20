@@ -29,8 +29,9 @@ Close the window, crash it, update it or reboot the computer: the layout, the ta
 
 **See what your agents are doing**
 
-- Every agent is marked **working** while it prints output and **waiting** once it has been quiet for a second and a half and needs you. What it shows in reply to your typing or a resize does not count as work.
-- The sidebar shows the state per workspace, tabs mark it with ▸, and the status bar lists the agents of the current workspace and every other workspace that waits for input — click one to jump there.
+- Claude Code reports exactly what it is doing: **working** (with the tool call in progress, e.g. `Bash: npm test` or `Edit src/app.ts`, in the tab's tooltip and the status bar), **needs permission**, **has a question**, **finished**, **stopped** when you interrupted it, or **failed** when the turn ended with an error such as a rate limit. Senju gets this from Claude Code's hooks through a plugin it passes to each terminal in `CLAUDE_CODE_PLUGIN_DIRS` (Claude Code 2.1.280 or later); your own Claude Code settings are not changed, and outside Senju the plugin is not loaded.
+- Other agents, and Claude Code before it reports anything, are marked **working** while they print output and **waiting** once they have been quiet for a second and a half. What they show in reply to your typing or a resize does not count as work.
+- Amber means working, red that an agent needs you, green that it finished. The sidebar shows the state per workspace, tabs mark it with ▸, and the status bar lists the agents of the current workspace and every other workspace that waits for input — click one to jump there.
 
 **Never lose a session**
 

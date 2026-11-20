@@ -9,7 +9,7 @@ export function quoteArgs(argv: string[]): string {
 }
 
 /** Environment variables that describe the shell session rather than the user's setup. */
-const volatileEnv = new Set(['_', 'OLDPWD', 'PWD', 'SHLVL', 'LINES', 'COLUMNS', 'TERM', 'COLORTERM', 'TERM_PROGRAM', 'TERM_PROGRAM_VERSION', 'SENJU_PANE_ID']);
+const volatileEnv = new Set(['_', 'OLDPWD', 'PWD', 'SHLVL', 'LINES', 'COLUMNS', 'TERM', 'COLORTERM', 'TERM_PROGRAM', 'TERM_PROGRAM_VERSION', 'SENJU_PANE_ID', 'SENJU_TERMINAL_ID', 'SENJU_EVENTS', 'CLAUDE_CODE_PLUGIN_DIRS']);
 
 /** Variables of `env` that are missing from or differ in `base`. */
 export function envDiff(env: Record<string, string>, base: Record<string, string | undefined>): Record<string, string> {

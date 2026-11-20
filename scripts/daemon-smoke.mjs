@@ -24,8 +24,22 @@ const dir = path.join(process.env.CLAUDE_CONFIG_DIR, 'sessions');
 fs.mkdirSync(dir, { recursive: true });
 fs.writeFileSync(path.join(dir, process.pid + '.json'), JSON.stringify({ pid: process.pid, sessionId: id }));
 console.log((r >= 0 ? 'resumed ' : 'started ') + id + ' args=' + args.join(' '));
+// Keys report hook events as Claude Code does: through the plugin Senju puts into CLAUDE_CODE_PLUGIN_DIRS.
+const hookEvents = {
+  p: [{ hook_event_name: 'UserPromptSubmit' }, { hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: 'npm test' } }],
+  a: [{ hook_event_name: 'PermissionRequest', tool_name: 'Edit', tool_input: { file_path: process.cwd() + '/src/app.ts' } }],
+  s: [{ hook_event_name: 'Stop' }],
+};
+function hook(event) {
+  const plugin = (process.env.CLAUDE_CODE_PLUGIN_DIRS || '').split(':').pop();
+  const { hooks } = JSON.parse(fs.readFileSync(path.join(plugin, 'hooks', 'hooks.json'), 'utf8'));
+  require('child_process').execFileSync('sh', ['-c', hooks[event.hook_event_name][0].hooks[0].command], { input: JSON.stringify({ ...event, cwd: process.cwd() }) });
+}
 process.stdin.setRawMode(true);
-process.stdin.on('data', (d) => d[0] === 3 && process.exit(0));
+process.stdin.on('data', (d) => {
+  if (d[0] === 3) process.exit(0);
+  for (const event of hookEvents[d.toString()] ?? []) hook(event);
+});
 `,
   { mode: 0o755 },
 );
@@ -202,6 +216,17 @@ const sessions = await waitFor(() => {
 });
 check(sessions && sessions[0] !== sessions[1], 'each agent terminal has its own session');
 check(term(termD).job?.recipe === 'claude-code', 'agent is recognised by recipe');
+const agentIs = (state, activity) => () => term(termD).agent?.state === state && term(termD).agent?.activity === activity;
+c.send({ type: 'input', terminalId: termD, data: 'p' });
+check(await waitFor(agentIs('working', 'Bash: npm test')), 'agent hooks report the tool it runs');
+c.send({ type: 'input', terminalId: termD, data: 'a' });
+check(await waitFor(agentIs('permission', 'Edit src/app.ts')), 'agent hooks report a permission request');
+// Refusing with Escape reports no event: the keys and the quiet after them do.
+c.send({ type: 'input', terminalId: termD, data: '\x1b' });
+check(await waitFor(agentIs('waiting', undefined)), 'an agent the user stopped is no longer waiting for permission');
+c.send({ type: 'input', terminalId: termD, data: 's' });
+check(await waitFor(agentIs('done', undefined)), 'agent hooks report the end of the turn');
+check(fs.readdirSync(path.join(home, 'events')).length === 0, 'reported events are removed');
 await sleep(300);
 
 daemon.kill('SIGTERM');

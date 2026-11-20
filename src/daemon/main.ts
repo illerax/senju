@@ -8,6 +8,7 @@ import path from 'node:path';
 import { PROTOCOL_VERSION, type Action, type ClientMessage, type DaemonMessage } from '../shared/protocol';
 import { BUILD_ID } from '../shared/build';
 import { paths } from '../shared/paths';
+import { applyHookEvent, EventSpool, hookEnv, writeHookPlugin, type HookEvent } from './agent-hooks';
 import { diagnose, diagnoseError, systemInfo, watchEventLoop } from '../shared/diagnostics';
 import { loadSettings, type Settings } from '../shared/settings';
 import type { AppState, JobState, TerminalState } from '../shared/types';
@@ -135,6 +136,9 @@ class Daemon {
 
   async start(): Promise<void> {
     this.repairState();
+    // Before the terminals start: their Claude Code loads the plugin from there.
+    await writeHookPlugin(this.hookPlugin).catch((err) => log('could not write the Claude Code plugin', err));
+    await this.events.start().catch((err) => log('could not watch agent events', err));
     pruneScrollback(paths.stateFile, new Set(Object.keys(this.state.terminals)));
     const jobCwds = Object.values(this.state.terminals).flatMap((t) => (t.job ? [t.job.cwd] : []));
     const present = await requiredFiles(this.recipes, jobCwds);
@@ -152,6 +156,20 @@ class Daemon {
       process.on(signal, () => void this.shutdown(false));
     }
     log(`daemon ${process.pid} started with ${this.sessions.size} terminals`);
+  }
+
+  private readonly hookPlugin = path.join(paths.runtimeDir, 'claude-plugin');
+  private readonly events = new EventSpool(path.join(paths.runtimeDir, 'events'), (id, event) => this.onHookEvent(id, event));
+
+  /** An agent reported through its hooks. */
+  private onHookEvent(terminalId: string, event: HookEvent): void {
+    const terminal = this.state.terminals[terminalId];
+    if (!terminal || this.shuttingDown) return;
+    const next = applyHookEvent(terminal.agent, event, Date.now());
+    const same = (a = terminal.agent, b = next) => a?.state === b?.state && a?.activity === b?.activity && a?.error === b?.error;
+    if (same()) return;
+    terminal.agent = next;
+    this.changed();
   }
 
   /** Output of each terminal in each of the last seconds, for diagnostics.log. */
@@ -216,11 +234,13 @@ class Daemon {
       env = { ...terminal.env, ...plan.env };
       terminal.pending = plan.pending;
       terminal.job = undefined;
+      terminal.agent = undefined;
     }
     const session = new TerminalSession({
       id: terminalId,
       cwd: terminal.cwd,
       env,
+      senjuEnv: hookEnv(terminalId, this.hookPlugin, this.events.dir, this.env),
       cols: terminal.cols || 80,
       rows: terminal.rows || 24,
       settings: this.settings,
@@ -321,6 +341,14 @@ class Daemon {
           this.setBusy(terminalId, session, busy);
           changed = true;
         }
+        // Hooks do not report an interrupted turn or a refused permission:
+        // the user pressed keys since the last event and the agent went quiet.
+        const agent = terminal.agent;
+        const now = Date.now();
+        if (agent && !busy && ['working', 'permission', 'question'].includes(agent.state) && session.inputAt > agent.at && now - session.inputAt > BUSY_MS) {
+          terminal.agent = { state: 'waiting', at: now };
+          changed = true;
+        }
 
         if (info.job) {
           if (tracked.jobGone) {
@@ -350,6 +378,7 @@ class Daemon {
             tracked.jobGone = undefined;
             if (this.shuttingDown || this.sessions.get(terminalId) !== session) return;
             terminal.job = undefined;
+            terminal.agent = undefined;
             tracked.jobPid = undefined;
             tracked.agentPid = undefined;
             this.changed();

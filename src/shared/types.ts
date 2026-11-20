@@ -63,6 +63,26 @@ export interface PendingCommand {
   cwd: string;
 }
 
+/**
+ * What an agent reports through its hooks (Claude Code). Agents without hooks
+ * have only `busy`, guessed from their output.
+ */
+export interface AgentState {
+  /**
+   * working: on a task; permission: asks to allow a tool; question: asks the
+   * user something; done: finished its turn; waiting: stopped without saying
+   * why, e.g. interrupted; error: the turn failed; ended: the session is over
+   * and the program is exiting.
+   */
+  state: 'working' | 'permission' | 'question' | 'done' | 'waiting' | 'error' | 'ended';
+  /** The tool call in progress or waiting for permission, e.g. "Bash: npm test". */
+  activity?: string;
+  /** Why the turn failed, e.g. "rate limit". */
+  error?: string;
+  /** When the state last changed. */
+  at: number;
+}
+
 export interface TerminalState {
   id: string;
   /** Tab name set by the user; otherwise the tab shows the running program or directory. */
@@ -76,6 +96,8 @@ export interface TerminalState {
   job?: JobState;
   /** The running program printed output in the last few seconds. An agent that stays quiet is waiting for input. */
   busy?: boolean;
+  /** Reported by the agent's hooks; exact where `busy` is a guess. */
+  agent?: AgentState;
   pending?: PendingCommand;
   /** Pixels the user zoomed this terminal by, on top of the zoom of all terminals. */
   zoom?: number;

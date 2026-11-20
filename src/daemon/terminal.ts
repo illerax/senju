@@ -16,6 +16,8 @@ export interface TerminalOptions {
   cwd: string;
   /** Variables added on top of the daemon environment. */
   env: Record<string, string>;
+  /** Variables of Senju itself, over the ones the terminal had before a restart. */
+  senjuEnv: Record<string, string>;
   cols: number;
   rows: number;
   settings: Settings;
@@ -73,7 +75,8 @@ export class TerminalSession {
   workedAt = 0;
   /** Called on every output counted as work. */
   onWork: (() => void) | null = null;
-  private inputAt = 0;
+  /** Time of the last input or resize. */
+  inputAt = 0;
   /** Output arrived since the scrollback was last persisted. */
   dirty = false;
   /** When the scrollback was last persisted. */
@@ -110,6 +113,7 @@ export class TerminalSession {
       // Saved environments of terminals from older versions may still point into AppImage mounts.
       env: {
         ...withoutAppImagePaths({ ...baseEnv(), ...opts.env }),
+        ...opts.senjuEnv,
         TERM: 'xterm-256color',
         COLORTERM: 'truecolor',
         TERM_PROGRAM: 'senju',
