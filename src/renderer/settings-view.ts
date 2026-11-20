@@ -212,9 +212,24 @@ export class SettingsView {
         this.ctx.copy(rows.map(([t, v]) => `${t}: ${v}`).join('\n'));
         copy.textContent = 'Copied';
       });
-      page.append(copy, updates, ...this.problemSection());
+      page.append(copy, ...this.notificationSection(), updates, ...this.problemSection());
     });
     return page;
+  }
+
+  private notificationSection(): HTMLElement[] {
+    const label = el('label', 'checkbox');
+    const box = el('input');
+    box.type = 'checkbox';
+    box.checked = this.ctx.settings().notifications;
+    box.addEventListener('change', () => void this.ctx.save({ notifications: box.checked }));
+    label.append(box, document.createTextNode('Notify me when an agent I am not looking at needs me'));
+    const note = el(
+      'p',
+      'settings-hint',
+      'A system notification tells you when an agent in another workspace or tab, or in a window you are not using, asks for permission, has a question, finished or failed. Clicking it shows that agent. The app icon and the window title count the agents waiting for you either way.',
+    );
+    return [el('h3', '', 'Notifications'), label, note];
   }
 
   private problemSection(): HTMLElement[] {

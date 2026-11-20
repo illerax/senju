@@ -32,6 +32,8 @@ Close the window, crash it, update it or reboot the computer: the layout, the ta
 - Claude Code reports exactly what it is doing: **working** (with the tool call in progress, e.g. `Bash: npm test` or `Edit src/app.ts`, in the tab's tooltip and the status bar), **needs permission**, **has a question**, **finished**, **stopped** when you interrupted it, or **failed** when the turn ended with an error such as a rate limit. Senju gets this from Claude Code's hooks through a plugin it passes to each terminal in `CLAUDE_CODE_PLUGIN_DIRS` (Claude Code 2.1.280 or later); your own Claude Code settings are not changed, and outside Senju the plugin is not loaded.
 - Other agents, and Claude Code before it reports anything, are marked **working** while they print output and **waiting** once they have been quiet for a second and a half. What they show in reply to your typing or a resize does not count as work.
 - Amber means working, red that an agent needs you, green that it finished. The sidebar shows the state per workspace, tabs mark it with ▸, and the status bar lists the agents of the current workspace and every other workspace that waits for input — click one to jump there.
+- When an agent you are not looking at needs you (it asks for permission, has a question, finished or failed), Senju shows a system notification; click it to go to that agent. The window title and the app icon (macOS dock, Linux launchers that support it) count the agents waiting for you until you look at them. Turn notifications off in **Settings → About**.
+- Waiting agents form a queue: Ctrl+Shift+J (Cmd+J) goes to the one that has waited longest, and pressing it again walks on to the next. The status bar shows how many wait and the longest wait (`3 waiting · longest 12m`; click it to go there), and how long each agent of the current workspace and each other waiting workspace has waited.
 
 **Never lose a session**
 
@@ -134,6 +136,7 @@ Change any of them in **Settings → Keyboard Shortcuts** (the gear at the botto
 | Maximize or restore the pane | Ctrl+Shift+Enter | Cmd+Shift+Enter |
 | Next / previous pane | Ctrl+Shift+] / [ | Cmd+] / [ |
 | Focus pane in a direction | Ctrl+Shift+Arrows | Cmd+Alt+Arrows |
+| Go to the agent waiting longest, then the next | Ctrl+Shift+J | Cmd+J |
 | New terminal tab | Ctrl+Shift+T | Cmd+T |
 | Close terminal tab | Ctrl+Shift+W | Cmd+W |
 | Rename tab | Ctrl+Shift+R | Cmd+Shift+R |
@@ -183,6 +186,7 @@ Settings live in `settings.json`, which holds only what differs from the default
 | --- | --- | --- |
 | `fontFamily`, `fontSize`, `fontWeight`, `lineHeight` | JetBrains Mono, 13, 400, 1 | Default terminal font. |
 | `zoom` | `0` | Pixels added to the font size of every terminal by zooming all terminals; a tab's own zoom is kept with the workspaces. |
+| `notifications` | `true` | A system notification when an agent you are not looking at needs you. |
 | `theme` | `Senju Dark` | Name of a built-in or custom theme. |
 | `themes` | `{}` | Custom themes by name: `background`, `foreground`, `cursor`, `selectionBackground`, the 16 ANSI colors (`black` … `brightWhite`) and optionally `font`. |
 | `keybindings` | `{}` | Shortcuts that differ from the defaults, e.g. `{ "newTab": ["Ctrl+Alt+T"] }`; an empty list unbinds a command. |

@@ -45,6 +45,7 @@ export const commands = {
   focusUp: { label: 'Focus pane above', category: 'Panes', linux: ['Ctrl+Shift+Up'], mac: ['Cmd+Alt+Up'] },
   focusDown: { label: 'Focus pane below', category: 'Panes', linux: ['Ctrl+Shift+Down'], mac: ['Cmd+Alt+Down'] },
 
+  nextAttention: { label: 'Go to the agent waiting longest, then the next', category: 'Tabs', linux: ['Ctrl+Shift+J'], mac: ['Cmd+J'] },
   newTab: { label: 'New terminal tab', category: 'Tabs', linux: ['Ctrl+Shift+T'], mac: ['Cmd+T'] },
   closeTab: { label: 'Close terminal tab', category: 'Tabs', linux: ['Ctrl+Shift+W'], mac: ['Cmd+W'] },
   renameTab: { label: 'Rename tab', category: 'Tabs', linux: ['Ctrl+Shift+R'], mac: ['Cmd+Shift+R'] },

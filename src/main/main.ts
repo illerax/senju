@@ -13,6 +13,7 @@ import { DaemonClient, DaemonReplaceDeclined } from './daemon-client';
 import { daemonLauncher } from './daemon-runtime';
 import { diagnose, diagnoseError, systemInfo, watchEventLoop } from '../shared/diagnostics';
 import { Updater } from './updater';
+import { clearNotification, notify, setBadge } from './notifications';
 import type { UpdateAction } from '../shared/update';
 
 const daemon = new DaemonClient(
@@ -228,6 +229,9 @@ function registerIpc(): void {
   ipcMain.on('restartDaemon', () => daemon.restartDaemon());
   ipcMain.on('diagnose', (_e, event: string, details: Record<string, unknown>) => diagnose('window', String(event), details));
   ipcMain.on('diagnoseError', (_e, event: string, error: { heapMB?: number }) => diagnoseError('window', String(event), error, { heapMB: error?.heapMB }));
+  ipcMain.on('notify', (_e, terminalId: string, title: string, body: string) => notify(win, String(terminalId), String(title), String(body)));
+  ipcMain.on('clearNotification', (_e, terminalId: string) => clearNotification(String(terminalId)));
+  ipcMain.on('setBadge', (_e, count: number) => setBadge(win, Number(count) || 0));
   ipcMain.handle('updateStatus', () => updater.current);
   ipcMain.on('updateAction', (_e, action: UpdateAction) => {
     if (action === 'check') void updater.check();
