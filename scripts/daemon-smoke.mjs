@@ -101,6 +101,7 @@ async function client() {
       const msg = JSON.parse(buf.slice(0, i));
       buf = buf.slice(i + 1);
       if (msg.type === 'state') c.state = msg.state;
+      if (msg.type === 'peek') c.peek = msg.screens;
       if (msg.type === 'snapshot' || msg.type === 'data') c.output[msg.terminalId] = (c.output[msg.terminalId] ?? '') + msg.data;
     }
   });
@@ -191,6 +192,8 @@ check(term(termB).pending?.command === 'sleep 1000', 'non-listed command waits f
 check(await waitFor(() => term(termC).job?.argv?.[0] === 'tail'), 'listed command restarts automatically');
 c.send({ type: 'attach', terminalId: termA });
 check(await waitFor(() => c.output[termA]?.includes('hello-senju') && c.output[termA]?.includes('restored')), 'scrollback is restored');
+c.send({ type: 'peek', terminalIds: [termA, 'missing'], lines: 30 });
+check(await waitFor(() => c.peek?.[termA]?.some((line) => line.includes('hello-senju')) && !('missing' in c.peek)), 'peek returns the last lines of a screen');
 
 c.send({ type: 'action', action: { type: 'runPending', terminalId: termB } });
 check(await waitFor(() => term(termB).job?.argv?.[0] === 'sleep'), '"Run again" starts the command');

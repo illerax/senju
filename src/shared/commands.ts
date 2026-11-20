@@ -58,6 +58,7 @@ export const commands = {
   paste: { label: 'Paste', category: 'Clipboard', linux: ['Ctrl+Shift+V', 'Shift+Insert'], mac: ['Cmd+V'] },
 
   toggleSidebar: { label: 'Show or hide the sidebar', category: 'Window', linux: ['Ctrl+Shift+B'], mac: ['Cmd+B'] },
+  toggleOverview: { label: 'Show or hide all agents', category: 'Window', linux: ['Ctrl+Shift+A'], mac: ['Cmd+Shift+A'] },
   openSettings: { label: 'Open settings', category: 'Window', linux: ['Ctrl+Shift+,'], mac: ['Cmd+,'] },
   zoomIn: { label: 'Zoom in the tab', category: 'Window', linux: ['Ctrl+Shift+='], mac: ['Cmd+='] },
   zoomOut: { label: 'Zoom out the tab', category: 'Window', linux: ['Ctrl+Shift+-'], mac: ['Cmd+-'] },

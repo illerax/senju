@@ -34,6 +34,7 @@ Close the window, crash it, update it or reboot the computer: the layout, the ta
 - Amber means working, red that an agent needs you, green that it finished. The sidebar shows the state per workspace, tabs mark it with ▸, and the status bar lists the agents of the current workspace and every other workspace that waits for input — click one to jump there.
 - When an agent you are not looking at needs you (it asks for permission, has a question, finished or failed), Senju shows a system notification; click it to go to that agent. The window title and the app icon (macOS dock, Linux launchers that support it) count the agents waiting for you until you look at them. Turn notifications off in **Settings → About**.
 - Waiting agents form a queue: Ctrl+Shift+J (Cmd+J) goes to the one that has waited longest, and pressing it again walks on to the next. The status bar shows how many wait and the longest wait (`3 waiting · longest 12m`; click it to go there), and how long each agent of the current workspace and each other waiting workspace has waited.
+- **All agents** (Ctrl+Shift+A, Cmd+Shift+A on macOS, the grid button at the top of the sidebar, or the agent count in the status bar) shows every agent as a card with its status, what it is doing and the last lines of its screen, live, the ones waiting for you first. Click a card or press Enter on it to go to that agent; arrows move between cards and Esc closes the overview.
 
 **Never lose a session**
 
@@ -137,6 +138,7 @@ Change any of them in **Settings → Keyboard Shortcuts** (the gear at the botto
 | Next / previous pane | Ctrl+Shift+] / [ | Cmd+] / [ |
 | Focus pane in a direction | Ctrl+Shift+Arrows | Cmd+Alt+Arrows |
 | Go to the agent waiting longest, then the next | Ctrl+Shift+J | Cmd+J |
+| Show or hide all agents | Ctrl+Shift+A | Cmd+Shift+A |
 | New terminal tab | Ctrl+Shift+T | Cmd+T |
 | Close terminal tab | Ctrl+Shift+W | Cmd+W |
 | Rename tab | Ctrl+Shift+R | Cmd+Shift+R |
