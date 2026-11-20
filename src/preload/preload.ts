@@ -27,6 +27,12 @@ const api = {
   diagnoseError: (event: string, error: { name: string; message: string; stack?: string; heapMB?: number }) => ipcRenderer.send('diagnoseError', event, error),
   updateStatus: () => ipcRenderer.invoke('updateStatus') as Promise<UpdateStatus>,
   updateAction: (action: UpdateAction) => ipcRenderer.send('updateAction', action),
+  notify: (terminalId: string, title: string, body: string) => ipcRenderer.send('notify', terminalId, title, body),
+  clearNotification: (terminalId: string) => ipcRenderer.send('clearNotification', terminalId),
+  setBadge: (count: number) => ipcRenderer.send('setBadge', count),
+  onNotificationClick: (callback: (terminalId: string) => void) => {
+    ipcRenderer.on('notificationClick', (_e, terminalId) => callback(terminalId));
+  },
   onUpdate: (callback: (status: UpdateStatus) => void) => {
     ipcRenderer.on('update', (_e, status) => callback(status));
   },

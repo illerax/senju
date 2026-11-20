@@ -16,6 +16,7 @@ import type { UpdateStatus } from '../shared/update';
 import { clampZoom, isLight, resolveTheme, zoomPercent } from '../shared/themes';
 import type { AppState, GroupState, LayoutNode, PaneNode, SplitNode, TerminalState, WorkspaceState } from '../shared/types';
 import { findPaneNode, panes, terminalIds } from '../shared/layout';
+import { agentStatus, Attention, formatWait, nextInQueue, type AgentKind, type Wait } from '../shared/agent-status';
 import { senju } from './api';
 import { confirmDialog } from './dialog';
 import { iconButton, iconSvg, logoSvg } from './icons';
@@ -141,45 +142,6 @@ function jobLabel(terminal: TerminalState | undefined): string | null {
 
 function runningJobs(ids: string[]): string[] {
   return ids.map((id) => jobLabel(state.terminals[id])).filter((l): l is string => l !== null);
-}
-
-/** working: busy with a task; waiting: needs the user; done: finished, ready for the next task. Also the CSS classes. */
-type AgentKind = 'working' | 'waiting' | 'done';
-
-interface AgentStatus {
-  kind: AgentKind;
-  text: string;
-  /** The tool call in progress, e.g. "Bash: npm test". */
-  activity?: string;
-}
-
-/**
- * What an agent reports through its hooks; without hooks, a guess from its
- * output: printing means working, quiet means waiting for input.
- */
-function agentStatus(terminal: TerminalState | undefined): AgentStatus | null {
-  const agent = terminal?.agent;
-  if (agent) {
-    const activity = agent.activity;
-    switch (agent.state) {
-      case 'working':
-        return { kind: 'working', text: 'working', activity };
-      case 'permission':
-        return { kind: 'waiting', text: 'needs permission', activity };
-      case 'question':
-        return { kind: 'waiting', text: 'has a question', activity };
-      case 'error':
-        return { kind: 'waiting', text: agent.error ? `failed: ${agent.error}` : 'failed' };
-      case 'done':
-        return { kind: 'done', text: 'finished' };
-      case 'waiting':
-        return { kind: 'done', text: 'stopped' };
-      case 'ended':
-        return null;
-    }
-  }
-  if (!terminal?.job?.recipe) return null;
-  return terminal.busy ? { kind: 'working', text: 'working' } : { kind: 'waiting', text: 'waiting for input' };
 }
 
 function workspaceAgents(workspace: WorkspaceState): Record<AgentKind, number> {
@@ -866,6 +828,7 @@ function toggleMaximize(paneId: string): void {
   }
   showMaximized(workspace);
   paneViews.get(paneId)?.activeView?.focus();
+  refreshAttention();
 }
 
 function showMaximized(workspace: WorkspaceState): void {
@@ -957,7 +920,8 @@ function renderStatus(): void {
       const terminal = state.terminals[id];
       const status = agentStatus(terminal);
       if (status) {
-        const text = `${tabLabel(terminal)} ${status.text}`;
+        const waited = waitedFor(id);
+        const text = `${tabLabel(terminal)} ${status.text}${waited ? ` ${waited}` : ''}`;
         parts.push(item(status.kind, status.activity ? `${text} · ${status.activity}` : text, status.activity ?? ''));
       }
     }
@@ -970,11 +934,25 @@ function renderStatus(): void {
       agents += counts.working + counts.waiting + counts.done;
       const kind = counts.waiting ? 'waiting' : counts.done ? 'done' : null;
       if (workspace.id !== ctx?.workspace.id && kind) {
-        const elsewhere = item(`${kind} link`, `${group.name}/${workspace.name} ${kind === 'done' ? 'finished' : 'waiting'}`, 'Show this workspace');
+        // The longest wait of the workspace, as the queue is sorted.
+        const ids = terminalIds(workspace.root);
+        const first = waitingAgents.find((w) => ids.includes(w.terminalId));
+        const waited = first ? ` ${formatWait(Date.now() - first.since)}` : '';
+        const elsewhere = item(`${kind} link`, `${group.name}/${workspace.name} ${kind === 'done' ? 'finished' : 'waiting'}${waited}`, 'Show this workspace');
         elsewhere.addEventListener('click', () => act({ type: 'activateWorkspace', workspaceId: workspace.id }));
         parts.push(elsewhere);
       }
     }
+  }
+  if (waitingAgents.length) {
+    // The queue of agents waiting for you, and how long the first one has waited.
+    const key = keymap.accelerator('nextAttention');
+    const longest = formatWait(Date.now() - waitingAgents[0].since);
+    const label = `${waitingAgents.length} waiting · longest ${longest}`;
+    const title = `Go to the agent waiting longest${key ? ` (${key})` : ''}`;
+    const count = item(`${unseenAgents.length ? 'waiting' : 'muted'} link`, label, title);
+    count.addEventListener('click', () => nextAttention());
+    parts.push(count);
   }
   if (agents) parts.push(item('muted', `${agents} agent${agents === 1 ? '' : 's'}`));
   const focused = focusedPane()?.activeTab;
@@ -1005,9 +983,108 @@ function render(force = false): void {
   if (hidden) renderRail();
   else renderSidebar();
   renderWorkspace(force);
+  checkAttention();
   renderStatus();
+  renderTitle();
+}
+
+function renderTitle(): void {
   const ctx = activeContext();
-  document.title = ctx ? `${ctx.workspace.name} — ${ctx.group.name} — Senju` : 'Senju';
+  const count = unseenAgents.length ? `(${unseenAgents.length}) ` : '';
+  document.title = count + (ctx ? `${ctx.workspace.name} — ${ctx.group.name} — Senju` : 'Senju');
+}
+
+// --- agents that need you ---
+
+const attention = new Attention();
+/** Agents that need the user and that the user has not looked at since. */
+let unseenAgents: string[] = [];
+/** Every agent that waits for the user, longest wait first: the queue Ctrl+Shift+J walks. */
+let waitingAgents: Wait[] = [];
+let attentionTimer: ReturnType<typeof setTimeout> | null = null;
+
+/** The terminals on screen: the active tab of each pane in the active workspace, except under a maximized pane. */
+function visibleTerminals(): Set<string> {
+  const workspace = activeContext()?.workspace;
+  if (!workspace) return new Set();
+  const shown = maximized.get(workspace.id)?.paneId;
+  return new Set(panes(workspace.root).filter((p) => !shown || p.id === shown).map((p) => p.activeTab));
+}
+
+function terminalPlace(terminalId: string): { group: GroupState; workspace: WorkspaceState } | null {
+  for (const group of state.groups) {
+    for (const workspace of group.workspaces) if (terminalIds(workspace.root).includes(terminalId)) return { group, workspace };
+  }
+  return null;
+}
+
+/**
+ * Notes which agents need the user and which of them are on screen, sends
+ * notifications for new waits off screen, and keeps the counter on the app
+ * icon. Returns whether the unseen agents changed.
+ */
+function checkAttention(): boolean {
+  if (!state) return false;
+  const looking = document.hasFocus() && !document.hidden;
+  const visible = visibleTerminals();
+  const views = Object.keys(state.terminals).map((terminalId) => ({
+    terminalId,
+    status: agentStatus(state.terminals[terminalId]),
+    seenNow: looking && visible.has(terminalId),
+  }));
+  const { notify, unseen, waiting, recheckIn } = attention.update(views, Date.now());
+  for (const id of unseenAgents) if (!unseen.includes(id)) senju.clearNotification(id);
+  if (settings.notifications) {
+    for (const id of notify) {
+      const terminal = state.terminals[id];
+      const status = agentStatus(terminal);
+      const place = terminalPlace(id);
+      if (!status) continue;
+      const body = [place && `${place.group.name} / ${place.workspace.name}`, status.activity].filter(Boolean).join('\n');
+      senju.notify(id, `${tabLabel(terminal)} ${status.text}`, body);
+    }
+  }
+  if (attentionTimer) clearTimeout(attentionTimer);
+  attentionTimer = recheckIn === null ? null : setTimeout(refreshAttention, recheckIn + 50);
+  const queue = (list: Wait[]) => list.map((w) => `${w.terminalId}@${w.since}`).join();
+  const queueChanged = queue(waiting) !== queue(waitingAgents);
+  waitingAgents = waiting;
+  if (unseen.join() === unseenAgents.join()) return queueChanged;
+  unseenAgents = unseen;
+  senju.setBadge(unseen.length);
+  return true;
+}
+
+/** How long an agent has waited for the user, or null when it does not wait. */
+function waitedFor(terminalId: string): string | null {
+  const wait = waitingAgents.find((w) => w.terminalId === terminalId);
+  return wait ? formatWait(Date.now() - wait.since) : null;
+}
+
+// The wait times in the status bar move on.
+setInterval(() => {
+  if (waitingAgents.length && state) renderStatus();
+}, 15_000);
+
+/** Checks again outside a render: the window gained or lost focus, or a guessed wait lasted. */
+function refreshAttention(): void {
+  if (state && checkAttention()) {
+    renderStatus();
+    renderTitle();
+  }
+}
+
+/** Shows the agent's terminal: its workspace, pane and tab. */
+function goToTerminal(terminalId: string): void {
+  if (!state.terminals[terminalId]) return;
+  act({ type: 'activateTab', terminalId });
+  terminals.get(terminalId)?.focus();
+}
+
+/** Goes to the agent that has waited longest, or from one in the queue to the next. */
+function nextAttention(): void {
+  const target = nextInQueue(waitingAgents, focusedPane()?.activeTab);
+  if (target) goToTerminal(target);
 }
 
 // --- commands ---
@@ -1146,6 +1223,8 @@ async function runCommand(command: Command): Promise<void> {
     case 'closePane':
       if (pane) return closePane(pane);
       return;
+    case 'nextAttention':
+      return nextAttention();
     case 'toggleMaximize':
       if (pane) toggleMaximize(pane.id);
       return;
@@ -1366,6 +1445,9 @@ async function main(): Promise<void> {
   senju.onMessage((msg) => onMessage(msg as UiMessage));
   showOutdated(await senju.daemonOutdated());
   senju.onUpdate(showUpdate);
+  senju.onNotificationClick((terminalId) => goToTerminal(terminalId));
+  for (const event of ['focus', 'blur'] as const) window.addEventListener(event, refreshAttention);
+  document.addEventListener('visibilitychange', refreshAttention);
   const update = await senju.updateStatus();
   if (update.state !== 'idle') showUpdate(update);
   const initial = (await senju.state()) as AppState | null;

@@ -30,6 +30,8 @@ export interface Settings extends Font {
   checkForUpdates: boolean;
   /** Pixels added to the font size of every terminal by zooming; 0 is the font's own size. */
   zoom: number;
+  /** A system notification when an agent the user is not looking at needs them. */
+  notifications: boolean;
 }
 
 export const defaultSettings: Settings = {
@@ -53,6 +55,7 @@ export const defaultSettings: Settings = {
   copyOnSelect: false,
   checkForUpdates: true,
   zoom: 0,
+  notifications: true,
 };
 
 function readUserSettings(): Record<string, unknown> {
