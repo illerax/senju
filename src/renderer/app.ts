@@ -481,6 +481,9 @@ async function terminalMenu(terminalId: string, e: MouseEvent): Promise<void> {
     { id: '-', label: '' },
     { id: 'closeTab', label: 'Close Tab', accelerator: keymap.accelerator('closeTab') },
     { id: 'closePane', label: 'Close Pane', accelerator: keymap.accelerator('closePane') },
+    ...(panes(workspace.root).length > 1
+      ? [{ id: 'maximize', label: maximized.get(workspace.id)?.paneId === pane.id ? 'Restore Pane' : 'Maximize Pane', accelerator: keymap.accelerator('toggleMaximize') }]
+      : []),
     ...(tabZoom(terminalId) || settings.zoom ? [{ id: '-', label: '' }] : []),
     ...(tabZoom(terminalId) ? [{ id: 'resetZoom', label: 'Reset Tab Zoom', accelerator: keymap.accelerator('resetZoom') }] : []),
     ...(settings.zoom || anyTabZoomed() ? [{ id: 'resetZoomAll', label: 'Reset Zoom of All Terminals', accelerator: keymap.accelerator('resetZoomAll') }] : []),
@@ -491,6 +494,7 @@ async function terminalMenu(terminalId: string, e: MouseEvent): Promise<void> {
   if (choice === 'right' || choice === 'down') act({ type: 'splitPane', paneId: pane.id, side: choice });
   if (choice === 'closeTab') void closeTab(terminalId);
   if (choice === 'closePane') void closePane(pane);
+  if (choice === 'maximize') toggleMaximize(pane.id);
   if (choice === 'resetZoom') setTabZoom(terminalId, 0);
   if (choice === 'resetZoomAll') resetAllZoom();
 }
@@ -585,6 +589,7 @@ class PaneView {
   private readonly tabList = el('div', 'pane-tab-list');
   private readonly actions = el('div', 'pane-actions');
   private readonly body = el('div', 'pane-body');
+  private readonly maximizeButton: HTMLButtonElement;
   private readonly tabs = new Map<string, { tab: HTMLElement; label: HTMLElement; mark: HTMLElement }>();
   private node!: PaneNode;
 
@@ -595,10 +600,12 @@ class PaneView {
       b.addEventListener('click', run);
       return b;
     };
+    this.maximizeButton = button('maximize', 'Maximize pane', 'toggleMaximize', () => toggleMaximize(this.id));
     this.actions.append(
       button('plus', 'New tab', 'newTab', () => act({ type: 'createTab', paneId: this.id })),
       button('splitRight', 'Split right', 'splitRight', () => act({ type: 'splitPane', paneId: this.id, side: 'right' })),
       button('splitDown', 'Split down', 'splitDown', () => act({ type: 'splitPane', paneId: this.id, side: 'down' })),
+      this.maximizeButton,
       button('close', 'Close pane with all its tabs', 'closePane', () => void closePane(this.node)),
     );
     this.tabBar.append(this.tabList, this.actions);
@@ -663,6 +670,22 @@ class PaneView {
     entry = { tab, label, mark };
     this.tabs.set(terminalId, entry);
     return entry;
+  }
+
+  /** Shows the pane over the whole workspace, or back in its place in the layout. */
+  setMaximized(maximized: boolean, alone: boolean): void {
+    this.element.classList.toggle('maximized', maximized);
+    // A pane alone in its workspace already fills it.
+    this.maximizeButton.hidden = alone;
+    this.maximizeButton.classList.toggle('active', maximized);
+    const icon = maximized ? 'restore' : 'maximize';
+    if (this.maximizeButton.dataset.icon !== icon) {
+      const label = maximized ? 'Restore pane' : 'Maximize pane';
+      this.maximizeButton.dataset.icon = icon;
+      this.maximizeButton.innerHTML = iconSvg(icon);
+      this.maximizeButton.setAttribute('aria-label', label);
+      tip(this.maximizeButton, label, 'toggleMaximize');
+    }
   }
 
   get activeView(): TerminalView | undefined {
@@ -789,6 +812,39 @@ function renderEmpty(container: HTMLElement): void {
   container.replaceChildren(box);
 }
 
+/**
+ * The maximized pane of each workspace, shown over the whole workspace until
+ * restored. Moving the focus to another pane restores it. A view setting of
+ * this window only, not kept across restarts.
+ */
+const maximized = new Map<string, { paneId: string; focused: boolean }>();
+
+function toggleMaximize(paneId: string): void {
+  const workspace = activeContext()?.workspace;
+  if (!workspace) return;
+  if (maximized.get(workspace.id)?.paneId === paneId) maximized.delete(workspace.id);
+  else if (panes(workspace.root).length > 1) {
+    // Maximizing a pane focuses it; until the daemon confirms, the old focus does not restore it.
+    maximized.set(workspace.id, { paneId, focused: false });
+    if (workspace.focusedPaneId !== paneId) act({ type: 'focusPane', paneId });
+  }
+  showMaximized(workspace);
+  paneViews.get(paneId)?.activeView?.focus();
+}
+
+function showMaximized(workspace: WorkspaceState): void {
+  const list = panes(workspace.root);
+  const entry = maximized.get(workspace.id);
+  if (entry && workspace.focusedPaneId === entry.paneId) entry.focused = true;
+  // The maximized pane closed, or another pane took the focus.
+  if (entry && ((entry.focused && workspace.focusedPaneId !== entry.paneId) || list.length < 2 || !list.some((p) => p.id === entry.paneId))) {
+    maximized.delete(workspace.id);
+  }
+  const shown = maximized.get(workspace.id)?.paneId;
+  $('workspace').classList.toggle('maximized', !!shown);
+  for (const { id } of list) paneViews.get(id)?.setMaximized(id === shown, list.length < 2);
+}
+
 function markFocus(paneId: string): void {
   for (const [id, view] of paneViews) view.element.classList.toggle('focused', id === paneId);
 }
@@ -799,6 +855,7 @@ function renderWorkspace(force = false): void {
   if (!workspace) {
     layoutSignature = '';
     splitElements.clear();
+    container.classList.remove('maximized');
     renderEmpty(container);
     return;
   }
@@ -813,6 +870,7 @@ function renderWorkspace(force = false): void {
   const ids = new Set(panes(workspace.root).map((p) => p.id));
   for (const [id, view] of paneViews) if (!ids.has(id) && !view.element.isConnected) paneViews.delete(id);
   markFocus(workspace.focusedPaneId);
+  showMaximized(workspace);
   const focused = focusedTerminal();
   if (focused && !editing && !document.activeElement?.closest('.terminal-overlay')) {
     if (!focused.element.contains(document.activeElement)) focused.focus();
@@ -956,6 +1014,8 @@ async function runCommand(command: Command): Promise<void> {
     if (pane) setTabZoom(pane.activeTab, zoom(tabZoom(pane.activeTab)));
   };
   const focus = (dir: 'left' | 'right' | 'up' | 'down') => {
+    // Neighbors are found by their place on screen, which a maximized pane covers.
+    if (ctx && maximized.delete(ctx.workspace.id)) showMaximized(ctx.workspace);
     const id = neighbor(dir);
     if (!id) return;
     act({ type: 'focusPane', paneId: id });
@@ -1045,6 +1105,9 @@ async function runCommand(command: Command): Promise<void> {
       return;
     case 'closePane':
       if (pane) return closePane(pane);
+      return;
+    case 'toggleMaximize':
+      if (pane) toggleMaximize(pane.id);
       return;
     case 'nextPane':
     case 'prevPane': {

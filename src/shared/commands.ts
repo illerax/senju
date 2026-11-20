@@ -39,6 +39,7 @@ export const commands = {
   closePane: { label: 'Close pane with its tabs', category: 'Panes', linux: ['Ctrl+Shift+X'], mac: ['Cmd+Shift+W'] },
   nextPane: { label: 'Next pane', category: 'Panes', linux: ['Ctrl+Shift+]'], mac: ['Cmd+]'] },
   prevPane: { label: 'Previous pane', category: 'Panes', linux: ['Ctrl+Shift+['], mac: ['Cmd+['] },
+  toggleMaximize: { label: 'Maximize or restore the pane', category: 'Panes', linux: ['Ctrl+Shift+Enter'], mac: ['Cmd+Shift+Enter'] },
   focusLeft: { label: 'Focus pane on the left', category: 'Panes', linux: ['Ctrl+Shift+Left'], mac: ['Cmd+Alt+Left'] },
   focusRight: { label: 'Focus pane on the right', category: 'Panes', linux: ['Ctrl+Shift+Right'], mac: ['Cmd+Alt+Right'] },
   focusUp: { label: 'Focus pane above', category: 'Panes', linux: ['Ctrl+Shift+Up'], mac: ['Cmd+Alt+Up'] },
