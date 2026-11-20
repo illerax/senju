@@ -23,6 +23,7 @@ Close the window, crash it, update it or reboot the computer: the layout, the ta
 
 - Groups in the sidebar, one per project, each with a list of workspaces and its own default folder.
 - Workspaces split horizontally and vertically into panes with any nesting; every pane has its own tabs.
+- Maximize a pane to read it over the whole workspace (the button in its tab bar, its context menu or the shortcut), and restore it the same way; moving the focus to another pane restores it too.
 - Colors for workspaces, drag and drop for groups, workspaces and tabs (also between panes), inline renaming.
 - A collapsible sidebar that shrinks to a rail of workspace markers.
 
@@ -128,6 +129,7 @@ Change any of them in **Settings → Keyboard Shortcuts** (the gear at the botto
 | Move workspace down / up, into the next or previous group at the ends | Ctrl+Alt+Shift+PageDown / PageUp | Cmd+Alt+Shift+Down / Up |
 | Split right / down | Ctrl+Shift+D / E | Cmd+D / Cmd+Shift+D |
 | Close pane with its tabs | Ctrl+Shift+X | Cmd+Shift+W |
+| Maximize or restore the pane | Ctrl+Shift+Enter | Cmd+Shift+Enter |
 | Next / previous pane | Ctrl+Shift+] / [ | Cmd+] / [ |
 | Focus pane in a direction | Ctrl+Shift+Arrows | Cmd+Alt+Arrows |
 | New terminal tab | Ctrl+Shift+T | Cmd+T |
