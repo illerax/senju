@@ -14,6 +14,14 @@ export type Action =
   /** Sets the directory new workspaces of the group start in. */
   | { type: 'setGroupCwd'; groupId: string; cwd: string }
   | { type: 'deleteGroup'; groupId: string }
+  /** Saves the group with its terminals to disk, then closes it; reopenGroup brings it back. */
+  | { type: 'closeGroup'; groupId: string }
+  | { type: 'reopenGroup'; closedId: string }
+  | { type: 'forgetClosedGroup'; closedId: string }
+  /** Saves the group to a file the user chose, keeping it open. */
+  | { type: 'exportGroup'; groupId: string; file: string }
+  /** Opens a group saved to a file, as a new group. */
+  | { type: 'importGroup'; file: string }
   | { type: 'moveGroup'; groupId: string; toIndex: number }
   | { type: 'setGroupCollapsed'; groupId: string; collapsed: boolean }
   | { type: 'createWorkspace'; groupId: string }

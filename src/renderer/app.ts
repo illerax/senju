@@ -300,6 +300,8 @@ function groupElementsFor(groupId: string): GroupElements {
       { id: 'rename', label: 'Rename Group' },
       { id: 'cwd', label: 'Change Default Path…' },
       { id: '-', label: '' },
+      { id: 'close', label: 'Close Group' },
+      { id: 'export', label: 'Save Group As…' },
       { id: 'delete', label: 'Delete Group' },
     ], e);
     const group = groupById(groupId);
@@ -308,6 +310,8 @@ function groupElementsFor(groupId: string): GroupElements {
     if (choice === 'rename') rename();
     if (choice === 'cwd') void changeGroupCwd(group);
     if (choice === 'delete') void deleteGroup(group);
+    if (choice === 'close') void closeGroup(group);
+    if (choice === 'export') void exportGroup(group);
   });
   draggable(header, 'group', groupId);
   dropZone(header, ['group', 'workspace'], (kind, id) => {
@@ -432,6 +436,51 @@ async function deleteGroup(group: GroupState): Promise<void> {
     confirmLabel: 'Delete',
   });
   if (ok) act({ type: 'deleteGroup', groupId: group.id });
+}
+
+/** Saves the group to disk and closes it; it can be reopened as it was. */
+async function closeGroup(group: GroupState): Promise<void> {
+  const jobs = runningJobs(group.workspaces.flatMap((w) => terminalIds(w.root)));
+  if (jobs.length) {
+    const ok = await confirmDialog({
+      title: `Close group “${group.name}”?`,
+      detail: `Running programs stop: ${jobs.join(', ')}. When you reopen the group, agents resume their sessions, and dev servers and logs start again.`,
+      confirmLabel: 'Close',
+    });
+    if (!ok) return;
+  }
+  act({ type: 'closeGroup', groupId: group.id });
+}
+
+async function exportGroup(group: GroupState): Promise<void> {
+  const file = await senju.saveGroupFile(group.name);
+  if (file) act({ type: 'exportGroup', groupId: group.id, file });
+}
+
+async function importGroup(): Promise<void> {
+  const file = await senju.openGroupFile();
+  if (file) act({ type: 'importGroup', file });
+}
+
+/** Closed groups to reopen, newest first, and opening a group from a file. */
+async function closedGroupsMenu(at: HTMLElement): Promise<void> {
+  const closed = state.closedGroups ?? [];
+  // The name, and on the right where the shortcut goes, when it was closed.
+  const date = (time: number) => new Date(time).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  const choice = await showMenu(
+    [
+      ...(closed.length
+        ? closed.map((g) => ({ id: `reopen:${g.id}`, label: g.name, accelerator: date(g.closedAt) }))
+        : [{ id: 'none', label: 'No closed groups', enabled: false }]),
+      { id: '-', label: '' },
+      { id: 'import', label: 'Open Group from File…' },
+      ...(closed.length ? [{ id: 'forget', label: 'Forget Closed Group', submenu: closed.map((g) => ({ id: `forget:${g.id}`, label: g.name })) }] : []),
+    ],
+    at,
+  );
+  if (choice?.startsWith('reopen:')) act({ type: 'reopenGroup', closedId: choice.slice('reopen:'.length) });
+  if (choice?.startsWith('forget:')) act({ type: 'forgetClosedGroup', closedId: choice.slice('forget:'.length) });
+  if (choice === 'import') void importGroup();
 }
 
 async function closeWorkspace(workspace: WorkspaceState): Promise<void> {
@@ -797,10 +846,17 @@ function renderEmpty(container: HTMLElement): void {
   mark.innerHTML = logoSvg(56);
   box.append(mark);
   if (!group) {
-    box.append(el('div', 'empty-title', 'No groups yet'));
+    box.append(el('div', 'empty-title', state.closedGroups?.length ? 'All groups are closed' : 'No groups yet'));
     button.textContent = 'New Group';
     button.addEventListener('click', () => void runCommand('newGroup'));
     hint.textContent = keymap.accelerator('newGroup') ?? '';
+    if (state.closedGroups?.length) {
+      const reopen = el('button', 'button', 'Reopen a Closed Group…');
+      reopen.addEventListener('click', () => void closedGroupsMenu(reopen));
+      box.append(button, reopen, hint);
+      container.replaceChildren(box);
+      return;
+    }
   } else {
     box.append(el('div', 'empty-title', 'No workspace open'));
     button.textContent = `New Workspace in “${group.name}”`;
@@ -1369,6 +1425,7 @@ function onMessage(msg: UiMessage): void {
       break;
     case 'error':
       console.error(msg.message);
+      setBanner('error', msg.message, [{ label: 'Dismiss', run: () => setBanner('error', null) }]);
       break;
   }
 }
@@ -1493,6 +1550,8 @@ async function main(): Promise<void> {
   $('workspace').after(overview.element);
   $('add-group').before(Object.assign(iconButton('grid', 'All agents'), { id: 'show-overview' }));
   $('show-overview').addEventListener('click', () => overview.toggle());
+  $('add-group').before(Object.assign(iconButton('history', 'Closed groups'), { id: 'closed-groups' }));
+  $('closed-groups').addEventListener('click', () => void closedGroupsMenu($('closed-groups')));
   tip($('show-overview'), 'All agents', 'toggleOverview');
   $('add-group').addEventListener('click', () => void newGroup());
   $('toggle-sidebar').addEventListener('click', () => setSidebarHidden(!state.ui.sidebarHidden));
