@@ -45,12 +45,11 @@ export async function writeHookPlugin(dir: string): Promise<void> {
 
 /** Variables that let Claude Code in a terminal report to the daemon, keeping plugin directories the user set. */
 export function hookEnv(terminalId: string, pluginDir: string, spoolDir: string, base: Record<string, string>): Record<string, string> {
-  const separator = process.platform === 'win32' ? ';' : ':';
-  const dirs = (base.CLAUDE_CODE_PLUGIN_DIRS ?? '').split(separator).filter((d) => d && d !== pluginDir);
+  const dirs = (base.CLAUDE_CODE_PLUGIN_DIRS ?? '').split(path.delimiter).filter((d) => d && d !== pluginDir);
   return {
     SENJU_TERMINAL_ID: terminalId,
     SENJU_EVENTS: spoolDir,
-    CLAUDE_CODE_PLUGIN_DIRS: [...dirs, pluginDir].join(separator),
+    CLAUDE_CODE_PLUGIN_DIRS: [...dirs, pluginDir].join(path.delimiter),
   };
 }
 

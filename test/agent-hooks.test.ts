@@ -1,3 +1,4 @@
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { applyHookEvent, hookEnv, toolActivity } from '../src/daemon/agent-hooks';
 
@@ -31,10 +32,14 @@ describe('agent hook events', () => {
 
 describe('tool activity', () => {
   it('names the tool and what it works on', () => {
-    expect(toolActivity({ tool_name: 'Edit', tool_input: { file_path: '/p/src/app.ts' }, cwd: '/p' })).toBe('Edit src/app.ts');
-    expect(toolActivity({ tool_name: 'Read', tool_input: { file_path: '/etc/hosts' }, cwd: '/p' })).toBe('Read /etc/hosts');
-    const long = `/srv/${'deep/'.repeat(20)}name.ts`;
-    expect(toolActivity({ tool_name: 'Write', tool_input: { file_path: long }, cwd: '/p' })).toMatch(/^Write ….*\/name\.ts$/);
+    // Paths as the platform writes them.
+    const project = path.resolve('/p');
+    const outside = path.resolve('/etc/hosts');
+    expect(toolActivity({ tool_name: 'Edit', tool_input: { file_path: path.join(project, 'src', 'app.ts') }, cwd: project })).toBe(`Edit ${path.join('src', 'app.ts')}`);
+    expect(toolActivity({ tool_name: 'Read', tool_input: { file_path: outside }, cwd: project })).toBe(`Read ${outside}`);
+    const long = path.join(path.resolve('/srv'), ...Array(20).fill('deep'), 'name.ts');
+    const write = toolActivity({ tool_name: 'Write', tool_input: { file_path: long }, cwd: project });
+    expect(write?.startsWith('Write …') && write.endsWith(`${path.sep}name.ts`)).toBe(true);
     expect(toolActivity({ tool_name: 'Grep', tool_input: { pattern: 'TODO' } })).toBe('Grep TODO');
     expect(toolActivity({ tool_name: 'Task', tool_input: { description: 'Find usages' } })).toBe('Task: Find usages');
     expect(toolActivity({ tool_name: 'mcp__github__create_issue', tool_input: {} })).toBe('create_issue (github)');
@@ -45,8 +50,9 @@ describe('tool activity', () => {
 
 describe('hook environment', () => {
   it('adds the plugin to the plugin directories the user set', () => {
-    const env = hookEnv('t1', '/run/senju/claude-plugin', '/run/senju/events', { CLAUDE_CODE_PLUGIN_DIRS: '/mine:/run/senju/claude-plugin' });
-    expect(env).toEqual({ SENJU_TERMINAL_ID: 't1', SENJU_EVENTS: '/run/senju/events', CLAUDE_CODE_PLUGIN_DIRS: '/mine:/run/senju/claude-plugin' });
+    const dirs = (...list: string[]) => list.join(path.delimiter);
+    const env = hookEnv('t1', '/run/senju/claude-plugin', '/run/senju/events', { CLAUDE_CODE_PLUGIN_DIRS: dirs('/mine', '/run/senju/claude-plugin') });
+    expect(env).toEqual({ SENJU_TERMINAL_ID: 't1', SENJU_EVENTS: '/run/senju/events', CLAUDE_CODE_PLUGIN_DIRS: dirs('/mine', '/run/senju/claude-plugin') });
     expect(hookEnv('t1', '/p', '/e', {}).CLAUDE_CODE_PLUGIN_DIRS).toBe('/p');
   });
 });
