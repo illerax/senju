@@ -51,6 +51,7 @@ export const commands = {
   nextTab: { label: 'Next tab', category: 'Tabs', linux: ['Ctrl+Tab'], mac: ['Ctrl+Tab', 'Cmd+Shift+]'] },
   prevTab: { label: 'Previous tab', category: 'Tabs', linux: ['Ctrl+Shift+Tab'], mac: ['Ctrl+Shift+Tab', 'Cmd+Shift+['] },
   ...tabCommands,
+  find: { label: 'Find in the terminal', category: 'Tabs', linux: ['Ctrl+Shift+F'], mac: ['Cmd+F'] },
 
   copy: { label: 'Copy', category: 'Clipboard', linux: ['Ctrl+Shift+C'], mac: ['Cmd+C'] },
   paste: { label: 'Paste', category: 'Clipboard', linux: ['Ctrl+Shift+V', 'Shift+Insert'], mac: ['Cmd+V'] },

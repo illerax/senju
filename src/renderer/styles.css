@@ -734,6 +734,7 @@ body.resizing-column * {
 }
 
 .terminal {
+  position: relative;
   flex: 1;
   min-width: 0;
   display: flex;
@@ -755,6 +756,82 @@ body.resizing-column * {
 /* The rows rarely fill the pane exactly; let the pane background show below them. */
 .terminal-host .xterm .xterm-viewport {
   background-color: transparent !important;
+}
+
+/* The find bar floats over the top right of the terminal, clear of its scrollbar. */
+.terminal-search {
+  position: absolute;
+  top: 6px;
+  right: 18px;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: var(--bar);
+  padding: 0 4px 0 6px;
+  background: var(--elevated);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+}
+
+.terminal-search[hidden] {
+  display: none;
+}
+
+.terminal-search-input {
+  width: 200px;
+  height: 24px;
+  padding: 0 6px;
+  font: inherit;
+  color: var(--fg);
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  outline: none;
+  user-select: text;
+}
+
+.terminal-search-input:focus {
+  border-color: var(--accent);
+}
+
+.terminal-search.no-results .terminal-search-input {
+  border-color: var(--waiting);
+}
+
+.terminal-search-count {
+  min-width: 72px;
+  padding: 0 6px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.terminal-search.no-results .terminal-search-count {
+  color: var(--waiting);
+}
+
+.terminal-search-toggle {
+  height: 24px;
+  min-width: 24px;
+  padding: 0 4px;
+  font: 500 11.5px var(--mono);
+  color: var(--muted);
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+
+.terminal-search-toggle:hover {
+  color: var(--fg);
+  background: var(--hover);
+}
+
+.terminal-search-toggle[aria-pressed='true'] {
+  color: var(--accent-text);
+  border-color: var(--accent);
 }
 
 .terminal-overlay {

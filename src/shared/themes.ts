@@ -180,3 +180,32 @@ export function zoomPercent(settings: ZoomSettings, tabZoom = 0): number {
   const base = resolveFont(settings).fontSize;
   return Math.round(((base + clampZoom(settings, settings.zoom + tabZoom)) / base) * 100);
 }
+
+/** The brand amber, which marks what is active across the UI. */
+const amber = '#e8a93b';
+
+/** Mixes two #rrggbb colors; `amount` is the share of `to`. A color that is not #rrggbb counts as black. */
+export function mixHex(from: string, to: string, amount: number): string {
+  const rgb = (hex: string) => {
+    const m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex);
+    return m ? m.slice(1).map((x) => parseInt(x, 16)) : [0, 0, 0];
+  };
+  const a = rgb(from);
+  const b = rgb(to);
+  return `#${a.map((x, i) => Math.round(x + (b[i] - x) * amount).toString(16).padStart(2, '0')).join('')}`;
+}
+
+/**
+ * Colors of search matches in a terminal: amber tints of the background, so
+ * the text stays readable, and the active match framed in amber. xterm needs
+ * them as #rrggbb.
+ */
+export function searchColors(theme: Pick<Theme, 'background'>) {
+  return {
+    matchBackground: mixHex(theme.background, amber, 0.3),
+    matchOverviewRuler: mixHex(theme.background, amber, 0.6),
+    activeMatchBackground: mixHex(theme.background, amber, 0.55),
+    activeMatchBorder: amber,
+    activeMatchColorOverviewRuler: amber,
+  };
+}
