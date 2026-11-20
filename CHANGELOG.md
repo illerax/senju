@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.1.9](https://github.com/illerax/senju/compare/v0.1.8...v0.1.9) (2026-11-20)
+
+
+### Features
+
+* close groups to disk and reopen them as they were ([#37](https://github.com/illerax/senju/issues/37)) ([8357091](https://github.com/illerax/senju/commit/8357091ff94e18280b7415c037901ff8415f1e57))
+* exact agent status from Claude Code hooks ([#34](https://github.com/illerax/senju/issues/34)) ([267c7b6](https://github.com/illerax/senju/commit/267c7b6a05a53617eedb6b9d8395ceff6e609cc0))
+* maximize a pane over the whole workspace and restore it ([#31](https://github.com/illerax/senju/issues/31)) ([41ad7ec](https://github.com/illerax/senju/commit/41ad7ec6fe2acd030ffc408ecee51dd5181e30d9))
+* notify about agents that need you and queue them by waiting time ([#35](https://github.com/illerax/senju/issues/35)) ([46260b0](https://github.com/illerax/senju/commit/46260b0f5548508684e8ad01b062aed7626f6060))
+* overview of all agents with the last lines of their screens ([#36](https://github.com/illerax/senju/issues/36)) ([fc35c23](https://github.com/illerax/senju/commit/fc35c2337bbdd6fb121416446f9aa7a4cf0860ed))
+* search a terminal's scrollback ([#33](https://github.com/illerax/senju/issues/33)) ([1b32386](https://github.com/illerax/senju/commit/1b3238680d0f6686898951a04ae27f350659dec7))
+
 ## [0.1.8](https://github.com/illerax/senju/compare/v0.1.7...v0.1.8) (2026-11-19)
 
 
