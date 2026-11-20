@@ -7,6 +7,7 @@ import { WebLinksAddon } from '@xterm/addon-web-links';
 import type { Settings } from '../shared/settings';
 import { resolveTheme, terminalFont } from '../shared/themes';
 import { senju } from './api';
+import { TerminalSearch } from './terminal-search';
 import { countOutput, note, outputTimer, snapshotTimer, terminalName } from './perf-monitor';
 
 export interface TerminalHooks {
@@ -39,6 +40,7 @@ export class TerminalView {
   /** Pixels this terminal is zoomed by, on top of the zoom of all terminals. */
   private zoom = 0;
   private lastSize = '';
+  private readonly search: TerminalSearch;
 
   constructor(
     readonly terminalId: string,
@@ -83,13 +85,16 @@ export class TerminalView {
     this.term.unicode.activeVersion = '11';
     this.term.loadAddon(new WebLinksAddon(open));
     this.term.open(this.host);
+    this.search = new TerminalSearch(this.term, () => resolveTheme(this.settings), () => this.focus());
+    this.element.append(this.search.element);
 
     this.term.attachCustomKeyEventHandler((e) => e.type !== 'keydown' || !hooks.onKey(e));
     this.term.onData((data) => this.synced && senju.send({ type: 'input', terminalId, data }));
     this.term.textarea?.addEventListener('focus', () => hooks.onFocus(terminalId));
     this.term.onSelectionChange(() => {
       const text = this.term.getSelection();
-      if (!text) return;
+      // Stepping through search matches selects them; that is not a copy.
+      if (!text || this.search.isOpen) return;
       if (platform === 'linux') senju.clipboardWrite(text, 'selection');
       if (this.copyOnSelect) senju.clipboardWrite(text);
     });
@@ -168,6 +173,7 @@ export class TerminalView {
     this.copyOnSelect = settings.copyOnSelect;
     this.term.options.theme = resolveTheme(settings);
     this.applyFont();
+    this.search.refresh();
   }
 
   /** Sets this terminal's own zoom, on top of the zoom of all terminals. */
@@ -189,6 +195,11 @@ export class TerminalView {
 
   focus(): void {
     this.term.focus();
+  }
+
+  /** Opens the find bar over the terminal. */
+  find(): void {
+    this.search.open();
   }
 
   async copy(): Promise<void> {

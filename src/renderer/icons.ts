@@ -7,6 +7,7 @@ const paths = {
   splitRight: '<rect x="2" y="3" width="12" height="10" rx="1.5"/><path d="M8 3v10"/>',
   splitDown: '<rect x="2" y="3" width="12" height="10" rx="1.5"/><path d="M2 8h12"/>',
   chevronDown: '<path d="M4.5 6.25L8 9.75l3.5-3.5"/>',
+  chevronUp: '<path d="M4.5 9.75L8 6.25l3.5 3.5"/>',
   chevronRight: '<path d="M6.25 4.5L9.75 8l-3.5 3.5"/>',
   sidebar: '<rect x="2" y="3" width="12" height="10" rx="1.5"/><path d="M6 3v10"/>',
   check: '<path d="M3.5 8.5l3 3 6-7"/>',

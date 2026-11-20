@@ -123,3 +123,14 @@ describe('zoom', () => {
     expect(zoomPercent({ ...defaultSettings, zoom: 0 }, -3)).toBe(77);
   });
 });
+
+describe('search colors', () => {
+  it('mixes colors and tints the background with amber', async () => {
+    const { mixHex, searchColors } = await import('../src/shared/themes');
+    expect(mixHex('#000000', '#ffffff', 0.5)).toBe('#808080');
+    expect(mixHex('rgb(0,0,0)', '#ffffff', 1)).toBe('#ffffff');
+    const colors = searchColors({ background: '#16181d' });
+    for (const value of Object.values(colors)) expect(value).toMatch(/^#[0-9a-f]{6}$/);
+    expect(colors.activeMatchBorder).toBe('#e8a93b');
+  });
+});

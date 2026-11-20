@@ -474,6 +474,7 @@ async function terminalMenu(terminalId: string, e: MouseEvent): Promise<void> {
   const choice = await contextMenu([
     { id: 'copy', label: 'Copy', accelerator: keymap.accelerator('copy'), enabled: !!view?.term.hasSelection() },
     { id: 'paste', label: 'Paste', accelerator: keymap.accelerator('paste') },
+    { id: 'find', label: 'Find…', accelerator: keymap.accelerator('find') },
     { id: '-', label: '' },
     { id: 'tab', label: 'New Tab', accelerator: keymap.accelerator('newTab') },
     { id: 'right', label: 'Split Right', accelerator: keymap.accelerator('splitRight') },
@@ -490,6 +491,7 @@ async function terminalMenu(terminalId: string, e: MouseEvent): Promise<void> {
   ], e);
   if (choice === 'copy') void view?.copy();
   if (choice === 'paste') void view?.paste();
+  if (choice === 'find') view?.find();
   if (choice === 'tab') act({ type: 'createTab', paneId: pane.id });
   if (choice === 'right' || choice === 'down') act({ type: 'splitPane', paneId: pane.id, side: choice });
   if (choice === 'closeTab') void closeTab(terminalId);
@@ -1125,6 +1127,8 @@ async function runCommand(command: Command): Promise<void> {
       return focusedTerminal()?.copy();
     case 'paste':
       return focusedTerminal()?.paste();
+    case 'find':
+      return focusedTerminal()?.find();
     case 'zoomIn':
       return zoomTab((z) => z + 1);
     case 'zoomOut':
