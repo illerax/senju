@@ -196,6 +196,19 @@ function registerIpc(): void {
     const result = await dialog.showOpenDialog(win, { properties: ['openDirectory', 'createDirectory'], defaultPath });
     return result.canceled ? null : result.filePaths[0];
   });
+  // Groups saved to a file the user picks (closed-groups.ts in the daemon reads and writes them).
+  const groupFilters = [{ name: 'Senju group', extensions: ['senju'] }];
+  ipcMain.handle('saveGroupFile', async (_e, name: string) => {
+    if (!win) return null;
+    const safe = String(name).replace(/[\\/:*?"<>|]/g, '').trim() || 'group';
+    const result = await dialog.showSaveDialog(win, { defaultPath: path.join(app.getPath('documents'), `${safe}.senju`), filters: groupFilters });
+    return result.canceled || !result.filePath ? null : result.filePath;
+  });
+  ipcMain.handle('openGroupFile', async () => {
+    if (!win) return null;
+    const result = await dialog.showOpenDialog(win, { properties: ['openFile'], filters: groupFilters });
+    return result.canceled ? null : result.filePaths[0];
+  });
   // The selection clipboard (X11/Wayland primary selection) exists only on Linux.
   const board = (type: 'clipboard' | 'selection') => (type === 'selection' ? clipboard.selection : clipboard);
   ipcMain.handle('clipboardRead', (_e, type: 'clipboard' | 'selection') => board(type)?.readText() ?? '');

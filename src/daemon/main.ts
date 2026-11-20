@@ -9,9 +9,10 @@ import { PROTOCOL_VERSION, type Action, type ClientMessage, type DaemonMessage }
 import { BUILD_ID } from '../shared/build';
 import { paths } from '../shared/paths';
 import { applyHookEvent, EventSpool, hookEnv, writeHookPlugin, type HookEvent } from './agent-hooks';
+import { describeSaved, insertRestored, listClosed, readSavedGroup, restoreGroup, snapshotGroup, writeSavedGroup } from './closed-groups';
 import { diagnose, diagnoseError, systemInfo, watchEventLoop } from '../shared/diagnostics';
 import { loadSettings, type Settings } from '../shared/settings';
-import type { AppState, JobState, TerminalState } from '../shared/types';
+import type { AppState, ClosedGroupInfo, JobState, SavedGroup, TerminalState } from '../shared/types';
 import { baseEnv, BUSY_MS, TerminalSession } from './terminal';
 import { inspectTerminals, type ProcessInfo } from './procinfo';
 import { listSessions, loadRecipes, matchRecipe, requiredFiles, sessionFromArgs, sessionFromPidFile, type Recipe } from './recipes';
@@ -139,6 +140,7 @@ class Daemon {
     // Before the terminals start: their Claude Code loads the plugin from there.
     await writeHookPlugin(this.hookPlugin).catch((err) => log('could not write the Claude Code plugin', err));
     await this.events.start().catch((err) => log('could not watch agent events', err));
+    this.closedGroups = await listClosed(paths.closedGroupsDir);
     pruneScrollback(paths.stateFile, new Set(Object.keys(this.state.terminals)));
     const jobCwds = Object.values(this.state.terminals).flatMap((t) => (t.job ? [t.job.cwd] : []));
     const present = await requiredFiles(this.recipes, jobCwds);
@@ -298,7 +300,90 @@ class Daemon {
     for (const id of effects.created) this.spawn(id, false);
   }
 
+  /** Groups closed to disk, newest first. */
+  private closedGroups: ClosedGroupInfo[] = [];
+
+  /** Closes a group to disk: its terminals stop, and reopening it restores them as after a reboot. */
+  private async closeGroup(groupId: string): Promise<void> {
+    await this.saveGroup(groupId, path.join(paths.closedGroupsDir, `${groupId}.json`), (saved) => {
+      this.closedGroups = [describeSaved(groupId, saved), ...this.closedGroups.filter((g) => g.id !== groupId)];
+      this.applyEffects(applyAction(this.state, { type: 'deleteGroup', groupId }, os.homedir()));
+    });
+  }
+
+  /** Saves a group with its terminals and their scrollback to a file. */
+  private async saveGroup(groupId: string, file: string, then?: (saved: SavedGroup) => void): Promise<void> {
+    const group = this.state.groups.find((g) => g.id === groupId);
+    if (!group) return;
+    const scrollback: Record<string, string> = {};
+    await Promise.all(
+      group.workspaces
+        .flatMap((w) => terminalIds(w.root))
+        .map(async (id) => {
+          const session = this.sessions.get(id);
+          if (session) scrollback[id] = await session.persistedScrollback(this.settings.persistedScrollback);
+        }),
+    );
+    const saved = snapshotGroup(this.state, groupId, scrollback, Date.now());
+    if (!saved || this.shuttingDown) return;
+    await writeSavedGroup(file, saved);
+    then?.(saved);
+    log(`group ${groupId} saved to ${file}`);
+    this.changed();
+  }
+
+  /** Opens a saved group as a new group at its old place; its terminals start as after a reboot. */
+  private async openGroup(file: string): Promise<void> {
+    const saved = await readSavedGroup(file);
+    const restored = restoreGroup(saved);
+    await Promise.all(Object.entries(restored.scrollback).map(([id, data]) => writeScrollback(paths.stateFile, id, data)));
+    const jobCwds = Object.values(restored.terminals).flatMap((t) => (t.job ? [t.job.cwd] : []));
+    const present = await requiredFiles(this.recipes, jobCwds);
+    if (this.shuttingDown) return;
+    insertRestored(this.state, restored, saved.index);
+    for (const id of Object.keys(restored.terminals)) this.spawn(id, true, present);
+    log(`group ${restored.group.id} opened from ${file}`);
+    this.changed();
+  }
+
+  private async groupFiles(action: Extract<Action, { type: 'closeGroup' | 'reopenGroup' | 'forgetClosedGroup' | 'exportGroup' | 'importGroup' }>): Promise<void> {
+    const closedFile = (id: string) => path.join(paths.closedGroupsDir, `${id.replace(/[^\w-]/g, '')}.json`);
+    try {
+      switch (action.type) {
+        case 'closeGroup':
+          return await this.closeGroup(action.groupId);
+        case 'exportGroup':
+          return await this.saveGroup(action.groupId, action.file);
+        case 'importGroup':
+          return await this.openGroup(action.file);
+        case 'reopenGroup':
+          await this.openGroup(closedFile(action.closedId));
+          await fs.promises.rm(closedFile(action.closedId), { force: true });
+          break;
+        case 'forgetClosedGroup':
+          await fs.promises.rm(closedFile(action.closedId), { force: true });
+          break;
+      }
+      if (action.type === 'reopenGroup' || action.type === 'forgetClosedGroup') {
+        this.closedGroups = this.closedGroups.filter((g) => g.id !== action.closedId);
+        this.changed();
+      }
+    } catch (err) {
+      log(`${action.type} failed`, err);
+      for (const client of this.clients) client.send({ type: 'error', message: (err as Error).message });
+    }
+  }
+
   private handleAction(action: Action): void {
+    switch (action.type) {
+      case 'closeGroup':
+      case 'reopenGroup':
+      case 'forgetClosedGroup':
+      case 'exportGroup':
+      case 'importGroup':
+        void this.groupFiles(action);
+        return;
+    }
     if (action.type === 'runPending' || action.type === 'dismissPending') {
       const terminal = this.state.terminals[action.terminalId];
       const pending = terminal?.pending;
@@ -548,7 +633,7 @@ class Daemon {
     for (const [id, terminal] of Object.entries(this.state.terminals)) {
       terminals[id] = { ...terminal, env: {}, job: terminal.job && { ...terminal.job, env: {} } };
     }
-    return { ...this.state, terminals };
+    return { ...this.state, terminals, closedGroups: this.closedGroups };
   }
 
   /** Saves in the background; changes made while a save runs are written right after it. */

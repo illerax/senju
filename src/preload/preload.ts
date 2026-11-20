@@ -12,6 +12,8 @@ const api = {
   saveSettings: (patch: unknown) => ipcRenderer.invoke('saveSettings', patch),
   platform: () => ipcRenderer.invoke('platform') as Promise<string>,
   homedir: () => ipcRenderer.invoke('homedir') as Promise<string>,
+  saveGroupFile: (name: string) => ipcRenderer.invoke('saveGroupFile', name) as Promise<string | null>,
+  openGroupFile: () => ipcRenderer.invoke('openGroupFile') as Promise<string | null>,
   pickFolder: (defaultPath?: string) => ipcRenderer.invoke('pickFolder', defaultPath) as Promise<string | null>,
   clipboardRead: (type: 'clipboard' | 'selection' = 'clipboard') => ipcRenderer.invoke('clipboardRead', type) as Promise<string>,
   clipboardWrite: (text: string, type: 'clipboard' | 'selection' = 'clipboard') => ipcRenderer.send('clipboardWrite', text, type),

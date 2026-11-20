@@ -101,6 +101,7 @@ async function client() {
       const msg = JSON.parse(buf.slice(0, i));
       buf = buf.slice(i + 1);
       if (msg.type === 'state') c.state = msg.state;
+      if (msg.type === 'error') (c.errors ??= []).push(msg.message);
       if (msg.type === 'peek') c.peek = msg.screens;
       if (msg.type === 'snapshot' || msg.type === 'data') c.output[msg.terminalId] = (c.output[msg.terminalId] ?? '') + msg.data;
     }
@@ -253,6 +254,36 @@ c.send({ type: 'attach', terminalId: termE });
 await sleep(1500);
 check(!term(termE).job && (c.output[termE].match(/resumed/g) ?? []).length === 1, 'closed agent is not started after restart');
 check(term(termB).pending?.command === 'sleep 1000', 'a job started with "Run again" is offered again');
+
+// Closing a group to disk and opening it again: at its place, with its agent resuming.
+c.send({ type: 'action', action: { type: 'createGroup', name: 'closable', cwd: work } });
+await waitFor(() => c.state.groups.some((g) => g.name === 'closable'));
+const closableIndex = () => c.state.groups.findIndex((g) => g.name === 'closable');
+const index = closableIndex();
+const closableTerminal = () => focusedPane(c.state.groups[closableIndex()].workspaces[0]).activeTab;
+const termG = closableTerminal();
+c.send({ type: 'attach', terminalId: termG });
+c.send({ type: 'input', terminalId: termG, data: `echo closable-marker && CLAUDE_CONFIG_DIR='${cc}' ${bin}/claude "start"\r` });
+const closableSession = await waitFor(() => term(termG)?.job?.sessionId);
+c.send({ type: 'action', action: { type: 'closeGroup', groupId: c.state.groups[index].id } });
+check(await waitFor(() => closableIndex() < 0 && c.state.closedGroups?.[0]?.name === 'closable' && !term(termG)), 'a closed group leaves the sidebar and its terminals stop');
+check(fs.readdirSync(path.join(home, 'closed-groups')).length === 1, 'a closed group is saved to disk');
+c.send({ type: 'action', action: { type: 'reopenGroup', closedId: c.state.closedGroups[0].id } });
+check(await waitFor(() => closableIndex() === index && c.state.closedGroups?.length === 0), 'a reopened group returns to its place');
+const termG2 = closableTerminal();
+c.send({ type: 'attach', terminalId: termG2 });
+check(termG2 !== termG && (await waitFor(() => c.output[termG2]?.includes(`resumed ${closableSession}`))), 'its agent resumes its session');
+check(c.output[termG2]?.includes('closable-marker'), 'its scrollback comes back');
+check(fs.readdirSync(path.join(home, 'closed-groups')).length === 0, 'a reopened group is removed from disk');
+const exported = path.join(home, 'closable.senju');
+c.send({ type: 'action', action: { type: 'exportGroup', groupId: c.state.groups[index].id, file: exported } });
+check(await waitFor(() => fs.existsSync(exported)), 'a group can be saved to a file');
+c.send({ type: 'action', action: { type: 'importGroup', file: exported } });
+check(await waitFor(() => c.state.groups.filter((g) => g.name === 'closable').length === 2), 'a saved file opens as a copy next to the group');
+for (const g of c.state.groups.filter((g) => g.name === 'closable')) c.send({ type: 'action', action: { type: 'deleteGroup', groupId: g.id } });
+c.send({ type: 'action', action: { type: 'importGroup', file: path.join(home, 'missing.senju') } });
+check(await waitFor(() => c.errors?.some((m) => m.includes('missing.senju'))), 'a file that cannot be opened is reported');
+await waitFor(() => closableIndex() < 0);
 
 // 4. A job the user stops is not restored.
 c.send({ type: 'input', terminalId: termC, data: '\x03' });

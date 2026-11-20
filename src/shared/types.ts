@@ -114,6 +114,36 @@ export interface AppState {
   activeWorkspaceId: string | null;
   terminals: Record<string, TerminalState>;
   ui: UiState;
+  /** Groups closed to disk, newest first. Sent to the UI only; the daemon reads them from their files. */
+  closedGroups?: ClosedGroupInfo[];
+}
+
+/** A group closed to disk, as the UI lists it. */
+export interface ClosedGroupInfo {
+  id: string;
+  name: string;
+  cwd: string;
+  workspaces: number;
+  terminals: number;
+  closedAt: number;
+}
+
+/**
+ * A group saved to a file, when closed or exported: everything to bring it
+ * back as after a reboot, at its place in the sidebar.
+ */
+export interface SavedGroup {
+  format: 'senju-group';
+  version: 1;
+  savedAt: number;
+  /** The group's place among the groups. */
+  index: number;
+  /** The workspace of the group that was active, if one was. */
+  activeWorkspaceId: string | null;
+  group: GroupState;
+  terminals: Record<string, TerminalState>;
+  /** Each terminal's scrollback, as saved for restarts. */
+  scrollback: Record<string, string>;
 }
 
 export function emptyState(): AppState {

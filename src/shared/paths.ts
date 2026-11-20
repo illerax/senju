@@ -36,6 +36,10 @@ export const paths = {
   get stateFile() {
     return path.join(baseDirs().state, 'state.json');
   },
+  /** Groups closed to disk, one file each (closed-groups.ts). */
+  get closedGroupsDir() {
+    return path.join(baseDirs().state, 'closed-groups');
+  },
   get logFile() {
     return path.join(baseDirs().state, 'daemon.log');
   },
