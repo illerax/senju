@@ -406,6 +406,10 @@ input.rename {
   color: var(--waiting);
 }
 
+.workspace-meta.done {
+  color: var(--done);
+}
+
 .sidebar-footer {
   display: flex;
   align-items: center;
@@ -660,6 +664,7 @@ body.resizing-column * {
 
 .tab-mark.working,
 .tab-mark.waiting,
+.tab-mark.done,
 .tab-mark.running {
   display: block;
 }
@@ -670,6 +675,10 @@ body.resizing-column * {
 
 .tab-mark.waiting {
   color: var(--waiting);
+}
+
+.tab-mark.done {
+  color: var(--done);
 }
 
 .tab-mark.running {
@@ -929,8 +938,13 @@ body.resizing-column * {
 }
 
 .status-item.working::before,
-.status-item.waiting::before {
+.status-item.waiting::before,
+.status-item.done::before {
   content: '●';
+}
+
+.status-item.done::before {
+  color: var(--done);
 }
 
 .status-item.working::before {

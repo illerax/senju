@@ -143,19 +143,50 @@ function runningJobs(ids: string[]): string[] {
   return ids.map((id) => jobLabel(state.terminals[id])).filter((l): l is string => l !== null);
 }
 
-type AgentStatus = 'working' | 'waiting';
+/** working: busy with a task; waiting: needs the user; done: finished, ready for the next task. Also the CSS classes. */
+type AgentKind = 'working' | 'waiting' | 'done';
 
-/** An agent printing output is working; one that stays quiet is waiting for input. */
-function agentStatus(terminal: TerminalState | undefined): AgentStatus | null {
-  if (!terminal?.job?.recipe) return null;
-  return terminal.busy ? 'working' : 'waiting';
+interface AgentStatus {
+  kind: AgentKind;
+  text: string;
+  /** The tool call in progress, e.g. "Bash: npm test". */
+  activity?: string;
 }
 
-function workspaceAgents(workspace: WorkspaceState): { working: number; waiting: number } {
-  const counts = { working: 0, waiting: 0 };
+/**
+ * What an agent reports through its hooks; without hooks, a guess from its
+ * output: printing means working, quiet means waiting for input.
+ */
+function agentStatus(terminal: TerminalState | undefined): AgentStatus | null {
+  const agent = terminal?.agent;
+  if (agent) {
+    const activity = agent.activity;
+    switch (agent.state) {
+      case 'working':
+        return { kind: 'working', text: 'working', activity };
+      case 'permission':
+        return { kind: 'waiting', text: 'needs permission', activity };
+      case 'question':
+        return { kind: 'waiting', text: 'has a question', activity };
+      case 'error':
+        return { kind: 'waiting', text: agent.error ? `failed: ${agent.error}` : 'failed' };
+      case 'done':
+        return { kind: 'done', text: 'finished' };
+      case 'waiting':
+        return { kind: 'done', text: 'stopped' };
+      case 'ended':
+        return null;
+    }
+  }
+  if (!terminal?.job?.recipe) return null;
+  return terminal.busy ? { kind: 'working', text: 'working' } : { kind: 'waiting', text: 'waiting for input' };
+}
+
+function workspaceAgents(workspace: WorkspaceState): Record<AgentKind, number> {
+  const counts = { working: 0, waiting: 0, done: 0 };
   for (const id of terminalIds(workspace.root)) {
     const status = agentStatus(state.terminals[id]);
-    if (status) counts[status]++;
+    if (status) counts[status.kind]++;
   }
   return counts;
 }
@@ -402,13 +433,14 @@ function renderSidebar(): void {
         else w.item.style.removeProperty('--ws-color');
         if (!w.name.querySelector('input')) w.name.textContent = workspace.name;
         // Working agents first: they are what the sidebar is glanced at for.
-        const status = agents.working ? 'working' : agents.waiting ? 'waiting' : '';
+        const status = agents.working ? 'working' : agents.waiting ? 'waiting' : agents.done ? 'done' : '';
         w.meta.className = `workspace-meta ${status}`.trim();
-        w.meta.textContent = agents.working ? `${agents.working} working` : agents.waiting ? 'waiting' : ids.length > 1 ? String(ids.length) : '';
+        w.meta.textContent = status === 'working' ? `${agents.working} working` : status || (ids.length > 1 ? String(ids.length) : '');
         w.item.title = [
           `${ids.length} terminal${ids.length === 1 ? '' : 's'}`,
           agents.working && `${agents.working} agent${agents.working > 1 ? 's' : ''} working`,
-          agents.waiting && `${agents.waiting} waiting for input`,
+          agents.waiting && `${agents.waiting} waiting for you`,
+          agents.done && `${agents.done} finished`,
         ]
           .filter(Boolean)
           .join(' · ');
@@ -627,10 +659,12 @@ class PaneView {
         const { tab, label, mark } = this.tabElements(terminalId);
         tab.classList.toggle('active', terminalId === node.activeTab);
         const status = agentStatus(terminal);
-        mark.className = `tab-mark ${status ?? (terminal?.job ? 'running' : '')}`.trim();
-        mark.title = status === 'working' ? 'Agent working' : status === 'waiting' ? 'Agent waiting for input' : '';
+        mark.className = `tab-mark ${status?.kind ?? (terminal?.job ? 'running' : '')}`.trim();
+        mark.title = status ? `Agent ${status.text}` : '';
         if (!label.querySelector('input')) label.textContent = tabLabel(terminal);
-        tab.title = [jobLabel(terminal), terminal && shortPath(terminal.cwd)].filter(Boolean).join('\n');
+        tab.title = [status && `Agent ${status.text}${status.activity ? `: ${status.activity}` : ''}`, jobLabel(terminal), terminal && shortPath(terminal.cwd)]
+          .filter(Boolean)
+          .join('\n');
         return tab;
       }),
     );
@@ -922,7 +956,10 @@ function renderStatus(): void {
     for (const id of terminalIds(ctx.workspace.root)) {
       const terminal = state.terminals[id];
       const status = agentStatus(terminal);
-      if (status) parts.push(item(status, `${tabLabel(terminal)} ${status}`));
+      if (status) {
+        const text = `${tabLabel(terminal)} ${status.text}`;
+        parts.push(item(status.kind, status.activity ? `${text} · ${status.activity}` : text, status.activity ?? ''));
+      }
     }
   }
   parts.push(el('span', 'status-spacer'));
@@ -930,9 +967,10 @@ function renderStatus(): void {
   for (const group of state.groups) {
     for (const workspace of group.workspaces) {
       const counts = workspaceAgents(workspace);
-      agents += counts.working + counts.waiting;
-      if (workspace.id !== ctx?.workspace.id && counts.waiting) {
-        const elsewhere = item('waiting link', `${group.name}/${workspace.name} waiting`, 'Show this workspace');
+      agents += counts.working + counts.waiting + counts.done;
+      const kind = counts.waiting ? 'waiting' : counts.done ? 'done' : null;
+      if (workspace.id !== ctx?.workspace.id && kind) {
+        const elsewhere = item(`${kind} link`, `${group.name}/${workspace.name} ${kind === 'done' ? 'finished' : 'waiting'}`, 'Show this workspace');
         elsewhere.addEventListener('click', () => act({ type: 'activateWorkspace', workspaceId: workspace.id }));
         parts.push(elsewhere);
       }
