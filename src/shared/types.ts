@@ -70,12 +70,16 @@ export interface PendingCommand {
 export interface AgentState {
   /**
    * working: on a task; permission: asks to allow a tool; question: asks the
-   * user something; done: finished its turn; waiting: stopped without saying
-   * why, e.g. interrupted; error: the turn failed; ended: the session is over
-   * and the program is exiting.
+   * user something; done: finished its turn; background: ended its turn but
+   * resumes by itself when a background task finishes or a scheduled wakeup
+   * fires; waiting: stopped without saying why, e.g. interrupted; error: the
+   * turn failed; ended: the session is over and the program is exiting.
    */
-  state: 'working' | 'permission' | 'question' | 'done' | 'waiting' | 'error' | 'ended';
-  /** The tool call in progress or waiting for permission, e.g. "Bash: npm test". */
+  state: 'working' | 'permission' | 'question' | 'done' | 'background' | 'waiting' | 'error' | 'ended';
+  /**
+   * The tool call in progress or waiting for permission, e.g. "Bash: npm test";
+   * in the background state, what the agent waits for.
+   */
   activity?: string;
   /** Why the turn failed, e.g. "rate limit". */
   error?: string;

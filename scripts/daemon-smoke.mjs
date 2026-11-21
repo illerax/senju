@@ -29,6 +29,7 @@ const hookEvents = {
   p: [{ hook_event_name: 'UserPromptSubmit' }, { hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: 'npm test' } }],
   a: [{ hook_event_name: 'PermissionRequest', tool_name: 'Edit', tool_input: { file_path: process.cwd() + '/src/app.ts' } }],
   s: [{ hook_event_name: 'Stop' }],
+  b: [{ hook_event_name: 'Stop', background_tasks: [{ id: 'b1', type: 'shell', status: 'running', command: 'npm run build' }], session_crons: [] }],
 };
 function hook(event) {
   const plugin = (process.env.CLAUDE_CODE_PLUGIN_DIRS || '').split(':').pop();
@@ -228,6 +229,8 @@ check(await waitFor(agentIs('permission', 'Edit src/app.ts')), 'agent hooks repo
 // Refusing with Escape reports no event: the keys and the quiet after them do.
 c.send({ type: 'input', terminalId: termD, data: '\x1b' });
 check(await waitFor(agentIs('waiting', undefined)), 'an agent the user stopped is no longer waiting for permission');
+c.send({ type: 'input', terminalId: termD, data: 'b' });
+check(await waitFor(agentIs('background', 'Bash: npm run build')), 'agent hooks report a turn that waits for a background task');
 c.send({ type: 'input', terminalId: termD, data: 's' });
 check(await waitFor(agentIs('done', undefined)), 'agent hooks report the end of the turn');
 check(fs.readdirSync(path.join(home, 'events')).length === 0, 'reported events are removed');

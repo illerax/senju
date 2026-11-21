@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { applyHookEvent, hookEnv, toolActivity } from '../src/daemon/agent-hooks';
+import { applyHookEvent, backgroundWork, hookEnv, toolActivity } from '../src/daemon/agent-hooks';
 
 describe('agent hook events', () => {
   const at = 1000;
@@ -18,6 +18,22 @@ describe('agent hook events', () => {
     agent = applyHookEvent(agent, { hook_event_name: 'Stop' }, at);
     expect(agent?.state).toBe('done');
     expect(applyHookEvent(agent, { hook_event_name: 'SessionEnd' }, at)?.state).toBe('ended');
+  });
+
+  it('keeps an agent that waits for background work apart from a finished one', () => {
+    const shell = { id: 'b1', type: 'shell', status: 'running', description: 'Run the build', command: 'npm run build\nnpm test' };
+    const stop = (background_tasks?: unknown, session_crons?: unknown) => applyHookEvent(undefined, { hook_event_name: 'Stop', background_tasks, session_crons }, at);
+    expect(stop([shell], [])).toEqual({ state: 'background', activity: 'Bash: npm run build', at });
+    // Claude Code without the fields, or with nothing in flight.
+    expect(stop()).toEqual({ state: 'done', at });
+    expect(stop([], [])).toEqual({ state: 'done', at });
+    expect(stop([{ ...shell, status: 'completed' }], [])).toEqual({ state: 'done', at });
+    // Claude Code resumes it with the task's notification as a prompt.
+    expect(applyHookEvent(stop([shell]), { hook_event_name: 'UserPromptSubmit' }, at)).toEqual({ state: 'working', at });
+    expect(backgroundWork({ background_tasks: [{ type: 'subagent', status: 'running', description: 'Review the diff' }] })).toBe('Review the diff');
+    expect(backgroundWork({ background_tasks: [shell, { type: 'monitor', status: 'running' }] })).toBe('2 background tasks');
+    expect(backgroundWork({ background_tasks: [], session_crons: [{ id: 'c1', schedule: '*/5 * * * *' }] })).toBe('scheduled wakeup');
+    expect(backgroundWork({ background_tasks: 'nonsense', session_crons: null })).toBeUndefined();
   });
 
   it('tells questions, permission notifications and failures apart', () => {

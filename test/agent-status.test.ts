@@ -15,6 +15,13 @@ describe('agent status', () => {
       needsYou: true,
     });
     expect(agentStatus(terminal({ agent: { state: 'waiting', at: 0 } }))?.needsYou).toBe(false);
+    expect(agentStatus(terminal({ agent: { state: 'background', activity: 'Bash: npm run build', at: 0 } }))).toEqual({
+      kind: 'working',
+      text: 'in background',
+      activity: 'Bash: npm run build',
+      exact: true,
+      needsYou: false,
+    });
     expect(agentStatus(terminal({ agent: { state: 'ended', at: 0 } }))).toBeNull();
     expect(agentStatus(terminal({ job, busy: false }))).toMatchObject({ kind: 'waiting', exact: false, needsYou: true });
     expect(agentStatus(terminal({}))).toBeNull();

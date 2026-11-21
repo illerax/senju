@@ -43,6 +43,9 @@ export function agentStatus(terminal: TerminalState | undefined): AgentStatus | 
         return status('waiting', agent.error ? `failed: ${agent.error}` : 'failed', true);
       case 'done':
         return status('done', 'finished', true);
+      // Resumes by itself when its background task finishes.
+      case 'background':
+        return status('working', 'in background', false, true);
       // The user stopped it and knows.
       case 'waiting':
         return status('done', 'stopped', false);

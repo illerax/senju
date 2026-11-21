@@ -65,6 +65,10 @@ export interface HookEvent {
   error?: unknown;
   error_type?: unknown;
   reason?: unknown;
+  /** Stop: the background work still in flight; missing in older Claude Code. */
+  background_tasks?: unknown;
+  /** Stop: scheduled wakeups, e.g. of /loop. */
+  session_crons?: unknown;
 }
 
 /** The agent's state after an event. Unknown events leave the state as it is. */
@@ -92,8 +96,12 @@ export function applyHookEvent(previous: AgentState | undefined, event: HookEven
         return { state: 'question', activity: previous?.activity, at };
       }
       return previous;
-    case 'Stop':
-      return { state: 'done', at };
+    case 'Stop': {
+      // Claude Code resumes the agent when a background task finishes or a
+      // scheduled wakeup fires, so the turn is over but the task is not.
+      const waitsFor = backgroundWork(event);
+      return waitsFor ? { state: 'background', activity: waitsFor, at } : { state: 'done', at };
+    }
     case 'StopFailure': {
       const reason = [event.error_type, event.error, event.reason].find((v) => typeof v === 'string' && v) as string | undefined;
       return { state: 'error', error: reason?.replace(/_/g, ' '), at };
@@ -101,6 +109,22 @@ export function applyHookEvent(previous: AgentState | undefined, event: HookEven
     default:
       return previous;
   }
+}
+
+/** What a stopped agent still waits for: "Bash: npm run build", "3 background tasks", "scheduled wakeup". */
+export function backgroundWork(event: Pick<HookEvent, 'background_tasks' | 'session_crons'>): string | undefined {
+  const list = (value: unknown) => (Array.isArray(value) ? value.filter((v): v is Record<string, unknown> => !!v && typeof v === 'object') : []);
+  // Entries of finished tasks may still be listed.
+  const tasks = list(event.background_tasks).filter((t) => t.status === undefined || t.status === 'running' || t.status === 'pending');
+  if (tasks.length > 1) return `${tasks.length} background tasks`;
+  const [task] = tasks;
+  if (task) {
+    const text = (key: string) => (typeof task[key] === 'string' && task[key] ? (task[key] as string) : undefined);
+    const command = text('command')?.split('\n')[0];
+    const what = task.type === 'shell' && command ? `Bash: ${command}` : (text('description') ?? command ?? text('name') ?? 'background task');
+    return truncate(what);
+  }
+  return list(event.session_crons).length > 0 ? 'scheduled wakeup' : undefined;
 }
 
 const MAX_ACTIVITY = 80;
