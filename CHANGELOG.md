@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.10](https://github.com/illerax/senju/compare/v0.1.9...v0.1.10) (2026-11-21)
+
+
+### Bug Fixes
+
+* show agents waiting for background tasks as in background, not finished ([#38](https://github.com/illerax/senju/issues/38)) ([4d99ea4](https://github.com/illerax/senju/commit/4d99ea4fa0fe5cb324afbebb993927c644f23711))
+
 ## [0.1.9](https://github.com/illerax/senju/compare/v0.1.8...v0.1.9) (2026-11-20)
 
 
