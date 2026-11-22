@@ -53,7 +53,8 @@ describe('Claude Code sessions', () => {
     const parts = Object.fromEntries(model.contextParts().map((p) => [p.label, p.tokens]));
     expect(model.context).toBe(12000);
     // The second request added 10000 tokens, nearly all of them the file.
-    expect(parts['Read src/app.ts']).toBeGreaterThan(9900);
+    // Relative to the agent's folder, with the platform's separator.
+    expect(parts[`Read ${path.join('src', 'app.ts')}`]).toBeGreaterThan(9900);
     expect(parts['Memory: CLAUDE.md']).toBeGreaterThan(400);
     expect(parts['MCP tools: github (1)']).toBeGreaterThan(400);
     expect(parts['Built-in tools (1)']).toBeGreaterThan(100);
