@@ -12,5 +12,8 @@
     }
   },
   "resume": "codex resume ${sessionId}",
-  "fallback": "codex resume --last"
+  "fallback": "codex resume --last",
+  "usage": {
+    "format": "codex"
+  }
 }

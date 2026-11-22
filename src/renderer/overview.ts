@@ -16,6 +16,10 @@ export interface OverviewCard {
   activity?: string;
   /** Group and workspace. */
   place: string;
+  /** What the agent runs with: configuration, account, model. */
+  profile?: string;
+  /** How full its context is, e.g. "context 42%". */
+  context?: string;
 }
 
 const el = <K extends keyof HTMLElementTagNameMap>(tag: K, className = '', text = ''): HTMLElementTagNameMap[K] => {
@@ -31,6 +35,7 @@ interface CardElements {
   status: HTMLElement;
   place: HTMLElement;
   activity: HTMLElement;
+  profile: HTMLElement;
   screen: HTMLElement;
 }
 
@@ -110,6 +115,13 @@ export class Overview {
       e.place.textContent = card.place;
       e.activity.textContent = card.activity ?? '';
       e.activity.hidden = !card.activity;
+      const profile = [card.context, card.profile].filter(Boolean).join(' · ');
+      if (e.profile.title !== profile) {
+        // Each part stays whole; lines break between parts only.
+        e.profile.replaceChildren(...profile.split(' · ').flatMap((part, i) => [...(i ? [' · '] : []), el('span', '', part)]));
+        e.profile.title = profile;
+      }
+      e.profile.hidden = !profile;
       e.card.title = `Go to ${card.name} in ${card.place}`;
       return e.card;
     });
@@ -153,13 +165,14 @@ export class Overview {
     const place = el('span', 'overview-place');
     header.append(name, status, place);
     const activity = el('div', 'overview-activity');
+    const profile = el('div', 'overview-profile');
     const screen = el('pre', 'overview-screen');
-    card.append(header, activity, screen);
+    card.append(header, profile, activity, screen);
     card.addEventListener('click', () => {
       this.close();
       this.ctx.open(terminalId);
     });
-    e = { card, name, status, place, activity, screen };
+    e = { card, name, status, place, activity, profile, screen };
     this.cards.set(terminalId, e);
     return e;
   }

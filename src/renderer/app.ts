@@ -25,6 +25,8 @@ import { showMenu, type MenuItem } from './menu';
 import { SettingsView } from './settings-view';
 import { TerminalView } from './terminal-view';
 import { Overview, OVERVIEW_LINES, type OverviewCard } from './overview';
+import { contextLevel, UsageView } from './usage-view';
+import { contextPercent, formatTokens, profileText } from '../shared/usage';
 import { measureSwitch, nameTerminals, note, report, startPerfMonitor, terminalName } from './perf-monitor';
 
 const SLOW_RENDER_MS = 100;
@@ -529,6 +531,7 @@ async function terminalMenu(terminalId: string, e: MouseEvent): Promise<void> {
     ...(panes(workspace.root).length > 1
       ? [{ id: 'maximize', label: maximized.get(workspace.id)?.paneId === pane.id ? 'Restore Pane' : 'Maximize Pane', accelerator: keymap.accelerator('toggleMaximize') }]
       : []),
+    ...(state.usage?.[terminalId] ? [{ id: '-', label: '' }, { id: 'usage', label: 'Context and Tokens…', accelerator: keymap.accelerator('showUsage') }] : []),
     ...(tabZoom(terminalId) || settings.zoom ? [{ id: '-', label: '' }] : []),
     ...(tabZoom(terminalId) ? [{ id: 'resetZoom', label: 'Reset Tab Zoom', accelerator: keymap.accelerator('resetZoom') }] : []),
     ...(settings.zoom || anyTabZoomed() ? [{ id: 'resetZoomAll', label: 'Reset Zoom of All Terminals', accelerator: keymap.accelerator('resetZoomAll') }] : []),
@@ -542,6 +545,7 @@ async function terminalMenu(terminalId: string, e: MouseEvent): Promise<void> {
   if (choice === 'closePane') void closePane(pane);
   if (choice === 'maximize') toggleMaximize(pane.id);
   if (choice === 'resetZoom') setTabZoom(terminalId, 0);
+  if (choice === 'usage') usageView.open(terminalId);
   if (choice === 'resetZoomAll') resetAllZoom();
 }
 
@@ -636,7 +640,7 @@ class PaneView {
   private readonly actions = el('div', 'pane-actions');
   private readonly body = el('div', 'pane-body');
   private readonly maximizeButton: HTMLButtonElement;
-  private readonly tabs = new Map<string, { tab: HTMLElement; label: HTMLElement; mark: HTMLElement }>();
+  private readonly tabs = new Map<string, { tab: HTMLElement; label: HTMLElement; mark: HTMLElement; usage: HTMLElement }>();
   private node!: PaneNode;
 
   constructor(readonly id: string) {
@@ -668,13 +672,14 @@ class PaneView {
       this.tabList,
       node.tabs.map((terminalId) => {
         const terminal = state.terminals[terminalId];
-        const { tab, label, mark } = this.tabElements(terminalId);
+        const { tab, label, mark, usage } = this.tabElements(terminalId);
         tab.classList.toggle('active', terminalId === node.activeTab);
         const status = agentStatus(terminal);
         mark.className = `tab-mark ${status?.kind ?? (terminal?.job ? 'running' : '')}`.trim();
         mark.title = status ? `Agent ${status.text}` : '';
         if (!label.querySelector('input')) label.textContent = tabLabel(terminal);
-        tab.title = [status && `Agent ${status.text}${status.activity ? `: ${status.activity}` : ''}`, jobLabel(terminal), terminal && shortPath(terminal.cwd)]
+        renderTabUsage(usage, terminalId);
+        tab.title = [status && `Agent ${status.text}${status.activity ? `: ${status.activity}` : ''}`, profileText(state.profiles?.[terminalId]), jobLabel(terminal), terminal && shortPath(terminal.cwd)]
           .filter(Boolean)
           .join('\n');
         return tab;
@@ -689,12 +694,20 @@ class PaneView {
     renderPending(view);
   }
 
-  private tabElements(terminalId: string): { tab: HTMLElement; label: HTMLElement; mark: HTMLElement } {
+  private tabElements(terminalId: string): { tab: HTMLElement; label: HTMLElement; mark: HTMLElement; usage: HTMLElement } {
     let entry = this.tabs.get(terminalId);
     if (entry) return entry;
     const tab = el('div', 'tab');
     const mark = el('span', 'tab-mark');
     const label = el('span', 'tab-label');
+    // How full the agent's context is; a click shows what fills it.
+    const usage = el('span', 'tab-usage');
+    usage.hidden = true;
+    usage.addEventListener('mousedown', (e) => e.stopPropagation());
+    usage.addEventListener('click', (e) => {
+      e.stopPropagation();
+      usageView.open(terminalId);
+    });
     const close = iconButton('close', 'Close tab', 'tab-close');
     tip(close, 'Close tab', 'closeTab');
     close.addEventListener('mousedown', (e) => e.stopPropagation());
@@ -702,7 +715,7 @@ class PaneView {
       e.stopPropagation();
       void closeTab(terminalId);
     });
-    tab.append(mark, label, close);
+    tab.append(mark, label, usage, close);
     tab.addEventListener('mousedown', (e) => {
       if (e.button === 0) act({ type: 'activateTab', terminalId });
     });
@@ -715,7 +728,7 @@ class PaneView {
     });
     draggable(tab, 'tab', terminalId);
     dropZone(tab, ['tab'], (_kind, id) => act({ type: 'moveTab', terminalId: id, paneId: this.id, toIndex: this.node.tabs.indexOf(terminalId) }));
-    entry = { tab, label, mark };
+    entry = { tab, label, mark, usage };
     this.tabs.set(terminalId, entry);
     return entry;
   }
@@ -743,6 +756,28 @@ class PaneView {
   tabLabelElement(terminalId: string): HTMLElement | null {
     return this.tabs.get(terminalId)?.label ?? null;
   }
+}
+
+/** "context 42%", or "context 45k" when the model's window is unknown. */
+function contextLabel(terminalId: string): string | undefined {
+  const usage = state.usage?.[terminalId];
+  if (!usage) return undefined;
+  const percent = contextPercent(usage);
+  return `context ${percent === null ? formatTokens(usage.context) : `${percent}%`}`;
+}
+
+/** The context fill of an agent's tab: "42%", or its tokens when the window is unknown. */
+function renderTabUsage(element: HTMLElement, terminalId: string): void {
+  const usage = state.usage?.[terminalId];
+  element.hidden = !usage;
+  if (!usage) return;
+  const percent = contextPercent(usage);
+  const text = percent === null ? formatTokens(usage.context) : `${percent}%`;
+  if (element.textContent !== text) element.textContent = text;
+  element.className = `tab-usage ${percent === null ? '' : contextLevel(percent)}`.trim();
+  const window = usage.window ? ` of ${usage.window.exact ? '' : '≈'}${formatTokens(usage.window.tokens)}` : '';
+  const key = keymap.accelerator('showUsage');
+  element.title = `Context: ${formatTokens(usage.context)} tokens${window}\nThis session: ${formatTokens(usage.session.output)} output tokens\nClick for what fills it${key ? ` (${key})` : ''}`;
 }
 
 function renameTab(terminalId: string, label: HTMLElement): void {
@@ -978,8 +1013,10 @@ function renderStatus(): void {
       const status = agentStatus(terminal);
       if (status) {
         const waited = waitedFor(id);
-        const text = `${tabLabel(terminal)} ${status.text}${waited ? ` ${waited}` : ''}`;
-        parts.push(item(status.kind, status.activity ? `${text} · ${status.activity}` : text, status.activity ?? ''));
+        const context = contextLabel(id);
+        const text = `${tabLabel(terminal)} ${status.text}${waited ? ` ${waited}` : ''}${context ? ` · ${context}` : ''}`;
+        const title = [status.activity, profileText(state.profiles?.[id])].filter(Boolean).join('\n');
+        parts.push(item(status.kind, status.activity ? `${text} · ${status.activity}` : text, title));
       }
     }
   }
@@ -1132,6 +1169,12 @@ setInterval(() => {
   overview.update();
 }, 15_000);
 
+const usageView = new UsageView({
+  request: (terminalId) => senju.send({ type: 'usage', terminalId }),
+  name: (terminalId) => tabLabel(state.terminals[terminalId]),
+  profile: (terminalId) => profileText(state.profiles?.[terminalId]),
+});
+
 // --- overview of all agents ---
 
 const overview = new Overview({
@@ -1168,6 +1211,8 @@ function overviewCards(): OverviewCard[] {
         waited: waitedFor(terminalId),
         activity: status.activity,
         place: `${place.group.name} / ${place.workspace.name}`,
+        profile: profileText(state.profiles?.[terminalId]) || undefined,
+        context: contextLabel(terminalId),
       },
     ];
   });
@@ -1333,6 +1378,9 @@ async function runCommand(command: Command): Promise<void> {
       return;
     case 'toggleOverview':
       return overview.toggle();
+    case 'showUsage':
+      if (pane) usageView.open(pane.activeTab);
+      return;
     case 'nextAttention':
       return nextAttention();
     case 'toggleMaximize':
@@ -1419,6 +1467,9 @@ function onMessage(msg: UiMessage): void {
       break;
     case 'peek':
       overview.screens(msg.screens);
+      break;
+    case 'usage':
+      usageView.show(msg.terminalId, msg.details);
       break;
     case 'data':
       terminals.get(msg.terminalId)?.onData(msg.data);

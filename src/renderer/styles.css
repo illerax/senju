@@ -693,6 +693,28 @@ body.resizing-column * {
   text-overflow: ellipsis;
 }
 
+.tab-usage {
+  flex: none;
+  padding: 0 4px;
+  border-radius: var(--radius);
+  font: 10px/16px var(--mono);
+  color: var(--faint);
+  cursor: pointer;
+}
+
+.tab-usage:hover {
+  color: var(--fg);
+  background: var(--hover);
+}
+
+.tab-usage.high {
+  color: var(--accent-text);
+}
+
+.tab-usage.full {
+  color: var(--waiting);
+}
+
 .tab-close {
   width: 20px;
   height: 20px;
@@ -1089,6 +1111,180 @@ body.resizing-column * {
   justify-content: flex-end;
   gap: 8px;
   margin-top: 20px;
+}
+
+/* Usage of an agent */
+
+.dialog.usage {
+  display: flex;
+  flex-direction: column;
+  width: 760px;
+  max-height: calc(100vh - 64px);
+  padding: 0;
+  outline: none;
+}
+
+.usage-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--line);
+}
+
+.usage-titles {
+  min-width: 0;
+}
+
+.usage-profile {
+  margin: 3px 0 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.usage-profile:empty {
+  display: none;
+}
+
+.usage-body {
+  overflow-y: auto;
+  padding: 4px 20px 20px;
+  user-select: text;
+}
+
+.usage-section {
+  padding-top: 14px;
+}
+
+.usage-section h3 {
+  margin: 0 0 8px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.usage-context {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.usage-context-amount {
+  font: 600 20px var(--mono);
+}
+
+.usage-muted,
+.usage-note {
+  color: var(--muted);
+}
+
+.usage-note {
+  margin: 6px 0 0;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.usage-bar {
+  height: 6px;
+  margin-top: 8px;
+  overflow: hidden;
+  background: var(--line);
+  border-radius: 3px;
+}
+
+.usage-bar-fill {
+  height: 100%;
+  background: var(--done);
+}
+
+.usage-bar.high .usage-bar-fill {
+  background: var(--accent);
+}
+
+.usage-bar.full .usage-bar-fill {
+  background: var(--waiting);
+}
+
+.usage-parts {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto 160px;
+  gap: 4px 12px;
+  align-items: center;
+  margin-top: 8px;
+}
+
+.usage-part {
+  display: contents;
+}
+
+.usage-part-label {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.usage-part-tokens {
+  font: 11px var(--mono);
+  color: var(--muted);
+  text-align: right;
+}
+
+.usage-part-track {
+  height: 6px;
+  background: var(--line);
+  border-radius: 3px;
+}
+
+.usage-part-bar {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 3px;
+}
+
+.usage-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.usage-table th,
+.usage-table td {
+  padding: 4px 8px;
+  text-align: right;
+  white-space: nowrap;
+  border-bottom: 1px solid var(--line);
+}
+
+.usage-table th {
+  font-weight: 500;
+  color: var(--muted);
+}
+
+.usage-table tr > :first-child {
+  padding-left: 0;
+  text-align: left;
+}
+
+.usage-table td {
+  font: 11px var(--mono);
+}
+
+.usage-prompts td.usage-prompt-text {
+  max-width: 420px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: left;
+  font: inherit;
+}
+
+.usage-prompts th:nth-child(2) {
+  text-align: left;
 }
 
 /* Color picker */
@@ -1738,6 +1934,25 @@ body.overview-open #workspace {
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--faint);
+}
+
+.overview-profile {
+  /* Up to two lines: the model at the end must stay visible. */
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: break-word;
+  font-size: 11.5px;
+  color: var(--faint);
+}
+
+.overview-profile span {
+  white-space: nowrap;
+}
+
+.overview-profile[hidden] {
+  display: none;
 }
 
 .overview-activity {

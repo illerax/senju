@@ -57,6 +57,8 @@ export function hookEnv(terminalId: string, pluginDir: string, spoolDir: string,
 export interface HookEvent {
   hook_event_name?: string;
   session_id?: string;
+  /** The session's transcript, which holds its token usage. */
+  transcript_path?: string;
   cwd?: string;
   tool_name?: string;
   tool_input?: Record<string, unknown>;

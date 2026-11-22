@@ -7,6 +7,7 @@ import fsp from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { quoteArgs } from './shellquote';
+import type { UsageSpec } from './usage';
 
 import claudeCode from '../../recipes/claude-code.json';
 import codex from '../../recipes/codex.json';
@@ -50,6 +51,8 @@ export interface Recipe {
   fallback?: string;
   /** File relative to the working directory that must exist for the recipe to apply. */
   requires?: string;
+  /** How to read the context and token usage from the session files. */
+  usage?: UsageSpec;
 }
 
 export const builtinRecipes = [claudeCode, codex, gemini, opencode, aider, nvim] as Recipe[];
@@ -250,6 +253,16 @@ export async function listSessions(recipe: Recipe, ctx: TemplateContext, since: 
     }
   }
   return sessions.sort((a, b) => b.mtime - a.mtime);
+}
+
+/** The file of a session, found as listSessions finds them. */
+export async function findSessionFile(recipe: Recipe, ctx: TemplateContext, sessionId: string): Promise<string | null> {
+  const spec = recipe.session?.files;
+  if (!spec) return null;
+  const found: { file: string; name: string }[] = [];
+  await walk(expand(spec.dir, ctx), spec, 0, found);
+  const re = new RegExp(spec.pattern);
+  return found.find(({ name }) => re.exec(name)?.[1] === sessionId)?.file ?? null;
 }
 
 /** Command that brings an agent back after a reboot, or null if the recipe cannot. */

@@ -53,6 +53,7 @@ export const commands = {
   prevTab: { label: 'Previous tab', category: 'Tabs', linux: ['Ctrl+Shift+Tab'], mac: ['Ctrl+Shift+Tab', 'Cmd+Shift+['] },
   ...tabCommands,
   find: { label: 'Find in the terminal', category: 'Tabs', linux: ['Ctrl+Shift+F'], mac: ['Cmd+F'] },
+  showUsage: { label: "Show the agent's context and tokens", category: 'Tabs', linux: ['Ctrl+Shift+K'], mac: ['Cmd+Shift+K'] },
 
   copy: { label: 'Copy', category: 'Clipboard', linux: ['Ctrl+Shift+C'], mac: ['Cmd+C'] },
   paste: { label: 'Paste', category: 'Clipboard', linux: ['Ctrl+Shift+V', 'Shift+Insert'], mac: ['Cmd+V'] },

@@ -35,7 +35,8 @@ Close the window, crash it, update it or reboot the computer: the layout, the ta
 - Amber means working, red that an agent needs you, green that it finished. The sidebar shows the state per workspace, tabs mark it with ▸, and the status bar lists the agents of the current workspace and every other workspace that waits for input — click one to jump there.
 - When an agent you are not looking at needs you (it asks for permission, has a question, finished or failed), Senju shows a system notification; click it to go to that agent. The window title and the app icon (macOS dock, Linux launchers that support it) count the agents waiting for you until you look at them. Turn notifications off in **Settings → About**.
 - Waiting agents form a queue: Ctrl+Shift+J (Cmd+J) goes to the one that has waited longest, and pressing it again walks on to the next. The status bar shows how many wait and the longest wait (`3 waiting · longest 12m`; click it to go there), and how long each agent of the current workspace and each other waiting workspace has waited.
-- **All agents** (Ctrl+Shift+A, Cmd+Shift+A on macOS, the grid button at the top of the sidebar, or the agent count in the status bar) shows every agent as a card with its status, what it is doing and the last lines of its screen, live, the ones waiting for you first. Click a card or press Enter on it to go to that agent; arrows move between cards and Esc closes the overview.
+- **How full each agent's context is** shows on its tab (`42%`; amber from 60%, red from 85%) and in the status bar. Click it, press Ctrl+Shift+K (Cmd+Shift+K), or pick **Context and Tokens…** in the terminal's menu to see [what fills the context and what the agent used](#context-and-tokens).
+- **All agents** (Ctrl+Shift+A, Cmd+Shift+A on macOS, the grid button at the top of the sidebar, or the agent count in the status bar) shows every agent as a card with its status, what it is doing, [what it runs with](#context-and-tokens), how full its context is and the last lines of its screen, live, the ones waiting for you first. Click a card or press Enter on it to go to that agent; arrows move between cards and Esc closes the overview.
 
 **Never lose a session**
 
@@ -58,6 +59,12 @@ Close the window, crash it, update it or reboot the computer: the layout, the ta
   <tr>
     <td width="50%"><img src="docs/screenshots/shortcuts.png" alt="Keyboard shortcut settings"><br><sub>Every shortcut can be changed.</sub></td>
     <td width="50%"><img src="docs/screenshots/menu.png" alt="Workspace menu with the color submenu open"><br><sub>Workspace colors and context menus.</sub></td>
+  </tr>
+  <tr>
+    <td colspan="2"><img src="docs/screenshots/overview.png" alt="All agents: a card per agent with its status, configuration, account, model, context and the last lines of its screen"><br><sub>All agents, with the configuration, account or API and model each one runs with.</sub></td>
+  </tr>
+  <tr>
+    <td colspan="2"><img src="docs/screenshots/usage.png" alt="The context and tokens of an agent: what fills its context, the tokens of its session and of each message"><br><sub>What fills an agent's context and the tokens of each message.</sub></td>
   </tr>
 </table>
 
@@ -146,6 +153,7 @@ Change any of them in **Settings → Keyboard Shortcuts** (the gear at the botto
 | Next / previous tab | Ctrl+Tab / Ctrl+Shift+Tab | Ctrl+Tab, Cmd+Shift+] / [ |
 | Tab 1–9 | Ctrl+Shift+1…9 | Cmd+1…9 |
 | Find in the terminal | Ctrl+Shift+F | Cmd+F |
+| The agent's context and tokens | Ctrl+Shift+K | Cmd+Shift+K |
 | Copy / paste | Ctrl+Shift+C / V, Shift+Insert | Cmd+C / V |
 | Show / hide the sidebar | Ctrl+Shift+B | Cmd+B |
 | Settings | Ctrl+Shift+, | Cmd+, |
@@ -155,6 +163,19 @@ Change any of them in **Settings → Keyboard Shortcuts** (the gear at the botto
 | Reset the zoom of all terminals and tabs | Ctrl+Alt+Shift+0 | Cmd+Alt+0 |
 
 "Close workspace" has no default shortcut. Switching to another group returns to the workspace you last used there.
+
+### Context and tokens
+
+**What an agent runs with** shows on its card in **All agents**, in its tab's tooltip, in the status bar's tooltip and at the top of its usage window, so agents started with different settings are told apart: the configuration folder when it isn't the default one (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`), the account it is signed in to with its plan, the API it talks to when that isn't the agent's own (`ANTHROPIC_BASE_URL`, e.g. `api.moonshot.ai` for Kimi behind Claude Code, Amazon Bedrock, Google Vertex AI, a Codex `model_provider`), the last four characters of its API key, and its model: the one it answered with, or until then the one it is set to (`--model`, `ANTHROPIC_MODEL`, the configuration's settings). Senju reads these from the agent's environment and command line and from its configuration folder (`settings.json` and `.claude.json` of Claude Code, `config.toml` and `auth.json` of Codex); keys and tokens themselves never leave the background service.
+
+Senju reads the session files Claude Code and Codex write — the same ones they resume from — so it knows the tokens of every request the agent made. The window an agent's tab opens shows:
+
+- **The context**: its size at the last request and how much of the model's window that is, and when it was compacted. Codex records its window; for Claude Code the size comes from the model, as listed in the recipe (1M for Opus 5 and `[1m]` models, 200k for others; a larger context seen proves a 1M window).
+- **What fills it**: the system prompt, built-in tools, the tools of each MCP server, memory files (`CLAUDE.md`), the skills list, each file the agent read, each command's output, the agent's own replies and your messages. The agents report only the total of each request, so Senju splits what each request added among what came in since the last one, by the size of its text: an estimate, close for large parts. Claude Code's own `/context` gives the exact split.
+- **Tokens used**: input, cache reads, cache writes and output of the session, its subagents included; of all sessions of the tab (after `/clear`, say); and of every agent session of the workspace, closed tabs included, so a workspace per task shows what the task cost.
+- **By message**: each of your messages with its requests and tokens.
+
+Senju shows tokens, not money: the agents' formats don't record prices, and a subscription is not billed per token. Session files are read where the agents keep them and only as they grow; nothing leaves the machine. Other agents show no usage yet; a recipe can add it when the agent records its tokens in a format Senju reads (`usage` below).
 
 ### Themes and fonts
 
@@ -250,6 +271,7 @@ A recipe tells Senju how to recognise an agent, how to find its session id and h
 | `flags` | Which original options `${flags}` carries over: everything starting with `-` except `drop`; `withValue` lists options followed by a separate value. Positional arguments are never carried over. |
 | `resume` | Command for a known session. |
 | `fallback` | Command when the session id is unknown. |
+| `usage` | How to read the context and tokens from the session files: `format` (`claude-code` or `codex`) and, for agents that don't record their context window, `contextWindows`: a list of `{ "model": <regular expression>, "tokens": <size> }`, the first match wins. |
 
 Templates understand `${sessionId}`, `${flags}`, `${args}`, `${program}`, `${cwd}`, `${cwdSlug}` (the folder with every non-alphanumeric character replaced by `-`), `${cwdJson}`, `${pid}`, `${home}`, `${env:NAME}` and `${env:NAME:-default}`; a leading `~` is the home folder.
 
