@@ -1140,7 +1140,7 @@ function checkAttention(): boolean {
       const terminal = state.terminals[id];
       const status = agentStatus(terminal);
       const place = terminalPlace(id);
-      if (!status) continue;
+      if (!status || (status.reason && !settings.notifyOn[status.reason])) continue;
       const body = [place && `${place.group.name} / ${place.workspace.name}`, status.activity].filter(Boolean).join('\n');
       senju.notify(id, `${tabLabel(terminal)} ${status.text}`, body);
     }

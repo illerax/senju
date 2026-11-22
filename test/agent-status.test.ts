@@ -13,6 +13,7 @@ describe('agent status', () => {
       activity: 'Bash: ls',
       exact: true,
       needsYou: true,
+      reason: 'permission',
     });
     expect(agentStatus(terminal({ agent: { state: 'waiting', at: 0 } }))?.needsYou).toBe(false);
     expect(agentStatus(terminal({ agent: { state: 'background', activity: 'Bash: npm run build', at: 0 } }))).toEqual({
@@ -23,7 +24,9 @@ describe('agent status', () => {
       needsYou: false,
     });
     expect(agentStatus(terminal({ agent: { state: 'ended', at: 0 } }))).toBeNull();
-    expect(agentStatus(terminal({ job, busy: false }))).toMatchObject({ kind: 'waiting', exact: false, needsYou: true });
+    expect(agentStatus(terminal({ job, busy: false }))).toMatchObject({ kind: 'waiting', exact: false, needsYou: true, reason: 'input' });
+    expect(agentStatus(terminal({ agent: { state: 'done', at: 0 } }))?.reason).toBe('finished');
+    expect(agentStatus(terminal({ agent: { state: 'error', error: 'rate limit', at: 0 } }))?.reason).toBe('failed');
     expect(agentStatus(terminal({}))).toBeNull();
   });
 });

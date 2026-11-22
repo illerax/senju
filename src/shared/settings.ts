@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import type { NeedReason } from './agent-status';
 import type { Command } from './commands';
 import { paths } from './paths';
 import { builtinThemes, defaultFont, defaultThemeName, type Font, type Theme } from './themes';
@@ -32,6 +33,8 @@ export interface Settings extends Font {
   zoom: number;
   /** A system notification when an agent the user is not looking at needs them. */
   notifications: boolean;
+  /** Which reasons to notify about; missing ones are on. */
+  notifyOn: Record<NeedReason, boolean>;
 }
 
 export const defaultSettings: Settings = {
@@ -56,6 +59,7 @@ export const defaultSettings: Settings = {
   checkForUpdates: true,
   zoom: 0,
   notifications: true,
+  notifyOn: { permission: true, question: true, finished: true, failed: true, input: true },
 };
 
 function readUserSettings(): Record<string, unknown> {
@@ -71,7 +75,7 @@ function readUserSettings(): Record<string, unknown> {
 /** Reads the settings file, falling back to defaults for anything missing or invalid. */
 export function loadSettings(): Settings {
   const user = readUserSettings() as Partial<Settings> & { theme?: unknown };
-  const settings: Settings = { ...defaultSettings, ...user, theme: defaultThemeName, themes: { ...(user.themes ?? {}) }, keybindings: { ...(user.keybindings ?? {}) } };
+  const settings: Settings = { ...defaultSettings, ...user, theme: defaultThemeName, themes: { ...(user.themes ?? {}) }, keybindings: { ...(user.keybindings ?? {}) }, notifyOn: { ...defaultSettings.notifyOn, ...(user.notifyOn ?? {}) } };
   if (typeof user.theme === 'string') {
     settings.theme = user.theme;
   } else if (user.theme && typeof user.theme === 'object') {

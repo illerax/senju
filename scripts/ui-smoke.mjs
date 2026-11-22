@@ -203,8 +203,20 @@ for (const key of ['PageDown', 'PageDown', 'PageUp', 'PageUp', 'PageDown']) {
 report(`workspace moves down, stops at the end, moves up into the previous group and back (${moves.join(' ')})`, moves.join(' ') === 'scratch:1 scratch:1 scratch:0 senju:1 scratch:0');
 report('the moved workspace stays active', (await state()).activeWorkspaceId === moving);
 
-// About: the diagnostics log can be found from the settings, to send it with a report.
+// Notifications have their own settings page: off as a whole, or per reason.
 await page.click('#open-settings');
+await page.locator('.settings-nav-item', { hasText: 'Notifications' }).click();
+const reason = page.locator('label.checkbox', { hasText: 'Finished its task' }).locator('input');
+await reason.uncheck();
+await sleep(300);
+const savedSettings = () => JSON.parse(fs.readFileSync(path.join(home, 'settings.json'), 'utf8'));
+report('a notification reason turned off is saved', savedSettings().notifyOn?.finished === false);
+await page.locator('label.checkbox', { hasText: 'Notify me when' }).locator('input').uncheck();
+await sleep(300);
+await shot('2c-notifications.png');
+report('notifications turned off disable the reasons', savedSettings().notifications === false && (await reason.isDisabled()));
+
+// About: the diagnostics log can be found from the settings, to send it with a report.
 await page.locator('.settings-nav-item', { hasText: 'About' }).click();
 await page.locator('button', { hasText: 'Show diagnostics.log' }).waitFor();
 await app.evaluate(({ shell }) => {
@@ -212,7 +224,7 @@ await app.evaluate(({ shell }) => {
   shell.showItemInFolder = (file) => globalThis.__shown.push(file);
   shell.openPath = async (file) => (globalThis.__shown.push(file), '');
 });
-await shot('2c-about.png');
+await shot('2d-about.png');
 await page.locator('button', { hasText: 'Show diagnostics.log' }).click();
 await sleep(300);
 const shown = await app.evaluate(() => globalThis.__shown);
