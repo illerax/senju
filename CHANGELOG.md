@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.11](https://github.com/illerax/senju/compare/v0.1.10...v0.1.11) (2026-11-22)
+
+
+### Features
+
+* show each agent's context, tokens and what it runs with ([#40](https://github.com/illerax/senju/issues/40)) ([1f8c531](https://github.com/illerax/senju/commit/1f8c53117afa29f65fa65a69fcba5542d21fa7d6))
+
 ## [0.1.10](https://github.com/illerax/senju/compare/v0.1.9...v0.1.10) (2026-11-21)
 
 
