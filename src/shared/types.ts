@@ -1,3 +1,5 @@
+import type { AgentProfile, AgentSessionFile, AgentUsage } from './usage';
+
 // Persistent workspace state. The daemon is the single owner and writer of this
 // structure; the UI only renders it and sends actions.
 //
@@ -33,6 +35,8 @@ export interface WorkspaceState {
   focusedPaneId: string;
   /** Hex color marking the workspace in the sidebar and around its layout. */
   color?: string;
+  /** Session files of every agent that ran in the workspace, for its token usage. */
+  agentSessions?: AgentSessionFile[];
 }
 
 export interface GroupState {
@@ -105,6 +109,8 @@ export interface TerminalState {
   pending?: PendingCommand;
   /** Pixels the user zoomed this terminal by, on top of the zoom of all terminals. */
   zoom?: number;
+  /** Session files of the agents that ran in this tab, for its token usage. */
+  agentSessions?: AgentSessionFile[];
 }
 
 export interface UiState {
@@ -120,6 +126,10 @@ export interface AppState {
   ui: UiState;
   /** Groups closed to disk, newest first. Sent to the UI only; the daemon reads them from their files. */
   closedGroups?: ClosedGroupInfo[];
+  /** Context and tokens of each running agent, by terminal id. Sent to the UI only. */
+  usage?: Record<string, AgentUsage>;
+  /** What each running agent runs with, by terminal id. Sent to the UI only. */
+  profiles?: Record<string, AgentProfile>;
 }
 
 /** A group closed to disk, as the UI lists it. */

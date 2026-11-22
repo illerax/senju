@@ -2,6 +2,7 @@
 // newline-delimited JSON.
 
 import type { AppState, UiState } from './types';
+import type { UsageDetails } from './usage';
 
 /** Bump when messages change incompatibly; a UI replaces a daemon with another version. */
 export const PROTOCOL_VERSION = 2;
@@ -54,6 +55,8 @@ export type ClientMessage =
   | { type: 'resize'; terminalId: string; cols: number; rows: number }
   /** Asks for the last lines on the screen of some terminals, as plain text. */
   | { type: 'peek'; terminalIds: string[]; lines: number }
+  /** Asks for the usage window of an agent: what fills its context and what it used. */
+  | { type: 'usage'; terminalId: string }
   /** Saves state and stops the daemon together with all terminal processes; they are restored on next start. */
   | { type: 'shutdown' };
 
@@ -64,4 +67,6 @@ export type DaemonMessage =
   | { type: 'data'; terminalId: string; data: string }
   /** The last non-empty lines on each terminal's screen. */
   | { type: 'peek'; screens: Record<string, string[]> }
+  /** The usage window of an agent, or null when its sessions can't be read. */
+  | { type: 'usage'; terminalId: string; details: UsageDetails | null }
   | { type: 'error'; message: string };

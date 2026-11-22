@@ -24,6 +24,20 @@ const dir = path.join(process.env.CLAUDE_CONFIG_DIR, 'sessions');
 fs.mkdirSync(dir, { recursive: true });
 fs.writeFileSync(path.join(dir, process.pid + '.json'), JSON.stringify({ pid: process.pid, sessionId: id }));
 console.log((r >= 0 ? 'resumed ' : 'started ') + id + ' args=' + args.join(' '));
+// The session's transcript, where Claude Code records the tokens of each request.
+const transcript = path.join(process.env.CLAUDE_CONFIG_DIR, 'projects', process.cwd().replace(/[^a-zA-Z0-9]/g, '-'), id + '.jsonl');
+function answer() {
+  const usage = (cacheWrite, output) => ({ input_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: cacheWrite, output_tokens: output });
+  const reply = (mid, u, block) => ({ type: 'assistant', cwd: process.cwd(), message: { id: mid, model: 'claude-sonnet-5-5', usage: u, content: [block] } });
+  const lines = [
+    { type: 'user', message: { role: 'user', content: 'add a test' }, timestamp: new Date().toISOString() },
+    reply('m1', usage(50000, 10), { type: 'tool_use', id: 't1', name: 'Read', input: { file_path: process.cwd() + '/src/app.ts' } }),
+    { type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 't1', content: 'x'.repeat(40000) }] } },
+    reply('m2', usage(60000, 20), { type: 'text', text: 'Done.' }),
+  ];
+  fs.mkdirSync(path.dirname(transcript), { recursive: true });
+  fs.appendFileSync(transcript, lines.map((l) => JSON.stringify(l) + String.fromCharCode(10)).join(''));
+}
 // Keys report hook events as Claude Code does: through the plugin Senju puts into CLAUDE_CODE_PLUGIN_DIRS.
 const hookEvents = {
   p: [{ hook_event_name: 'UserPromptSubmit' }, { hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: 'npm test' } }],
@@ -34,11 +48,12 @@ const hookEvents = {
 function hook(event) {
   const plugin = (process.env.CLAUDE_CODE_PLUGIN_DIRS || '').split(':').pop();
   const { hooks } = JSON.parse(fs.readFileSync(path.join(plugin, 'hooks', 'hooks.json'), 'utf8'));
-  require('child_process').execFileSync('sh', ['-c', hooks[event.hook_event_name][0].hooks[0].command], { input: JSON.stringify({ ...event, cwd: process.cwd() }) });
+  require('child_process').execFileSync('sh', ['-c', hooks[event.hook_event_name][0].hooks[0].command], { input: JSON.stringify({ ...event, cwd: process.cwd(), transcript_path: transcript }) });
 }
 process.stdin.setRawMode(true);
 process.stdin.on('data', (d) => {
   if (d[0] === 3) process.exit(0);
+  if (d.toString() === 'u') answer();
   for (const event of hookEvents[d.toString()] ?? []) hook(event);
 });
 `,
@@ -104,6 +119,7 @@ async function client() {
       if (msg.type === 'state') c.state = msg.state;
       if (msg.type === 'error') (c.errors ??= []).push(msg.message);
       if (msg.type === 'peek') c.peek = msg.screens;
+      if (msg.type === 'usage') c.usage = msg.details;
       if (msg.type === 'snapshot' || msg.type === 'data') c.output[msg.terminalId] = (c.output[msg.terminalId] ?? '') + msg.data;
     }
   });
@@ -210,6 +226,9 @@ c.send({ type: 'action', action: { type: 'splitPane', paneId: focusedPane(agentW
 await waitFor(() => agentWorkspace().root.type === 'split');
 const termE = focusedPane(agentWorkspace()).activeTab;
 const cc = path.join(home, 'cc config');
+fs.mkdirSync(cc, { recursive: true });
+fs.writeFileSync(path.join(cc, 'settings.json'), JSON.stringify({ model: 'opus' }));
+fs.writeFileSync(path.join(cc, '.claude.json'), JSON.stringify({ oauthAccount: { emailAddress: 'dev@example.com', planDisplayName: 'Max' } }));
 for (const id of [termD, termE]) {
   c.send({ type: 'attach', terminalId: id });
   c.send({ type: 'input', terminalId: id, data: `cd ${work} && CLAUDE_CONFIG_DIR='${cc}' ${bin}/claude --dangerously-skip-permissions "fix it"\r` });
@@ -234,6 +253,24 @@ check(await waitFor(agentIs('background', 'Bash: npm run build')), 'agent hooks 
 c.send({ type: 'input', terminalId: termD, data: 's' });
 check(await waitFor(agentIs('done', undefined)), 'agent hooks report the end of the turn');
 check(fs.readdirSync(path.join(home, 'events')).length === 0, 'reported events are removed');
+
+// Context and tokens, read from the agent's session file.
+c.send({ type: 'input', terminalId: termD, data: 'u' });
+check(await waitFor(() => c.state.usage?.[termD]?.context === 60000), "agent's context is read from its session file");
+const usage = c.state.usage?.[termD];
+check(usage?.window?.tokens === 200000 && usage.session.output === 30 && usage.model === 'claude-sonnet-5-5', `context window and tokens (${JSON.stringify(usage)})`);
+check(!c.state.usage?.[termE], 'an agent that has not answered shows no usage');
+const profileE = c.state.profiles?.[termE];
+check(profileE?.config === cc && profileE.account === 'dev@example.com' && profileE.plan === 'Max' && profileE.model === 'opus', `agent profile: configuration, account and the model it is set to (${JSON.stringify(profileE)})`);
+check(c.state.profiles?.[termD]?.model === 'claude-sonnet-5-5', 'agent profile shows the model it answered with');
+c.send({ type: 'usage', terminalId: termD });
+const details = await waitFor(() => c.usage);
+const read = details?.parts.find((p) => p.label === 'Read src/app.ts');
+check(read && read.tokens > 9000, `usage window names what fills the context (${JSON.stringify(details?.parts)})`);
+check(details?.prompts[0]?.text === 'add a test' && details.prompts[0].requests === 2, 'usage window lists the messages with their requests');
+check(details?.tab.sessions === 1 && details.workspace.sessions === 1, 'usage of the tab and workspace counts the session');
+check(await waitFor(() => savedState().terminals[termD].agentSessions?.length === 1), "the tab's sessions are saved for its totals");
+check(!c.state.terminals[termD].agentSessions, 'session files are not sent to the UI');
 await sleep(300);
 
 daemon.kill('SIGTERM');
@@ -245,6 +282,7 @@ check(await waitFor(() => c.output[termD]?.includes(`resumed ${sessions?.[0]}`))
 check(await waitFor(() => c.output[termE]?.includes(`resumed ${sessions?.[1]}`)), 'second agent resumes its own session');
 check(c.output[termD]?.includes('args=--dangerously-skip-permissions --resume'), 'agent keeps its options, not its prompt');
 check(await waitFor(() => term(termE).job?.sessionId === sessions?.[1]), 'resumed agent is tracked again');
+check(await waitFor(() => c.state.usage?.[termD]?.context === 60000), 'resumed agent shows the usage of its session again');
 
 // The user closes an agent: it does not come back.
 c.send({ type: 'input', terminalId: termE, data: '\x03' });

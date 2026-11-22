@@ -15,15 +15,22 @@ import { loadSettings, type Settings } from '../shared/settings';
 import type { AppState, ClosedGroupInfo, JobState, SavedGroup, TerminalState } from '../shared/types';
 import { baseEnv, BUSY_MS, TerminalSession } from './terminal';
 import { inspectTerminals, type ProcessInfo } from './procinfo';
-import { listSessions, loadRecipes, matchRecipe, requiredFiles, sessionFromArgs, sessionFromPidFile, type Recipe } from './recipes';
+import { findSessionFile, listSessions, loadRecipes, programOf, matchRecipe, requiredFiles, sessionFromArgs, sessionFromPidFile, type Recipe } from './recipes';
 import { planRestore } from './restore';
 import { envDiff } from './shellquote';
 import { deleteScrollback, loadState, pruneScrollback, readScrollback, saveState, saveStateAsync, writeScrollback, writeScrollbackSync } from './store';
-import { applyAction, closeTerminal, type Effects } from './workspace';
+import { applyAction, closeTerminal, findTerminal, type Effects } from './workspace';
+import { UsageTracker } from './usage';
+import { agentProfile } from './agent-profile';
+import { addTokens, type AgentProfile, type AgentSessionFile, type AgentUsage, type UsageDetails } from '../shared/usage';
 import { terminalIds } from '../shared/layout';
 
 const POLL_MS = 1000;
 const SESSION_POLL_MS = 2000;
+/** How often the session files of running agents are read for their context and tokens. */
+const USAGE_POLL_MS = 2000;
+/** Sessions a tab or a workspace keeps for its totals; the oldest are dropped. */
+const MAX_AGENT_SESSIONS = 50;
 /** How often one terminal's scrollback may be saved; one at a time keeps each pause short. */
 const SCROLLBACK_TICK_MS = 3000;
 /** Minimum age of a saved scrollback before it is saved again, for quiet and for busy terminals. */
@@ -149,6 +156,7 @@ class Daemon {
     this.listen();
     repeat(() => logIfSlow('process poll', SLOW_POLL_MS, () => this.pollProcesses()), POLL_MS);
     repeat(() => logIfSlow('session poll', SLOW_POLL_MS, () => this.pollSessions()), SESSION_POLL_MS);
+    repeat(() => logIfSlow('usage poll', SLOW_POLL_MS, () => this.pollUsage()), USAGE_POLL_MS);
     repeat(() => this.persistScrollback(), SCROLLBACK_TICK_MS);
     this.watchOutput();
     watchEventLoop('daemon', BLOCKED_MS, () => ({ busiest: this.busiest() }));
@@ -167,11 +175,126 @@ class Daemon {
   private onHookEvent(terminalId: string, event: HookEvent): void {
     const terminal = this.state.terminals[terminalId];
     if (!terminal || this.shuttingDown) return;
+    if (typeof event.transcript_path === 'string' && event.transcript_path) this.transcripts.set(terminalId, event.transcript_path);
     const next = applyHookEvent(terminal.agent, event, Date.now());
     const same = (a = terminal.agent, b = next) => a?.state === b?.state && a?.activity === b?.activity && a?.error === b?.error;
     if (same()) return;
     terminal.agent = next;
     this.changed();
+  }
+
+  // --- context and token usage of agents ---
+
+  private readonly usage = new UsageTracker();
+  /** What the UI shows of each running agent, by terminal id. */
+  private readonly agentUsage = new Map<string, AgentUsage>();
+  /** What each running agent runs with, by terminal id. */
+  private readonly profiles = new Map<string, AgentProfile>();
+  /** Session files Claude Code reported through its hooks, by terminal id. */
+  private readonly transcripts = new Map<string, string>();
+  /** Session files found through recipes, by recipe and session id; null until a retry is due. */
+  private readonly sessionFiles = new Map<string, { file: string | null; at: number }>();
+
+  /** The file of an agent's current session. */
+  private async sessionFile(terminal: TerminalState, recipe: Recipe, job: JobState): Promise<string | null> {
+    const id = job.sessionId;
+    if (!id) return null;
+    const reported = this.transcripts.get(terminal.id);
+    if (reported && path.basename(reported).includes(id)) return reported;
+    const key = `${recipe.name}\0${id}`;
+    const known = this.sessionFiles.get(key);
+    if (known && (known.file || Date.now() - known.at < 30_000)) return known.file;
+    const env = { ...this.env, ...terminal.env, ...job.env };
+    const file = await findSessionFile(recipe, { cwd: job.cwd, env }, id);
+    this.sessionFiles.set(key, { file, at: Date.now() });
+    return file;
+  }
+
+  /** Adds a session to the totals of its tab and workspace; true when it is new there. */
+  private rememberSession(terminal: TerminalState, session: AgentSessionFile): boolean {
+    const add = (owner: { agentSessions?: AgentSessionFile[] }) => {
+      if (owner.agentSessions?.some((s) => s.file === session.file)) return false;
+      owner.agentSessions = [...(owner.agentSessions ?? []), session].slice(-MAX_AGENT_SESSIONS);
+      return true;
+    };
+    const workspace = findTerminal(this.state, terminal.id)?.workspace;
+    const added = add(terminal);
+    return (workspace ? add(workspace) : false) || added;
+  }
+
+  /** Reads the session files of the running agents for their context and tokens, and what they run with. */
+  private async pollUsage(): Promise<void> {
+    if (this.shuttingDown) return;
+    let changed = false;
+    const shown = new Set<string>();
+    const profiled = new Set<string>();
+    for (const terminal of Object.values(this.state.terminals)) {
+      const job = terminal.job;
+      const recipe = job?.recipe ? this.recipes.find((r) => r.name === job.recipe) : undefined;
+      if (!job || !recipe?.usage) continue;
+      const format = recipe.usage.format;
+      const profile = await agentProfile(format, { ...this.env, ...terminal.env, ...job.env }, programOf(job.argv).args);
+      const file = await this.sessionFile(terminal, recipe, job);
+      const read = file ? await this.usage.session({ file, format }) : null;
+      // The terminal may have closed or its agent changed meanwhile.
+      if (this.state.terminals[terminal.id] !== terminal || terminal.job !== job) continue;
+      // The model it answered with, rather than the one it was set to.
+      if (read?.model.model) profile.model = read.model.model;
+      profiled.add(terminal.id);
+      if (JSON.stringify(profile) !== JSON.stringify(this.profiles.get(terminal.id))) {
+        this.profiles.set(terminal.id, profile);
+        changed = true;
+      }
+      if (!file || !read) continue;
+      if (this.rememberSession(terminal, { file, format })) changed = true;
+      const { model, subagents } = read;
+      if (model.requests === 0) continue;
+      shown.add(terminal.id);
+      const usage: AgentUsage = { context: model.context, window: model.contextWindow(recipe.usage), model: model.model, session: addTokens(model.tokens, subagents) };
+      if (JSON.stringify(usage) !== JSON.stringify(this.agentUsage.get(terminal.id))) {
+        this.agentUsage.set(terminal.id, usage);
+        changed = true;
+      }
+    }
+    for (const id of this.agentUsage.keys()) {
+      if (shown.has(id)) continue;
+      this.agentUsage.delete(id);
+      changed = true;
+    }
+    for (const id of this.profiles.keys()) {
+      if (profiled.has(id)) continue;
+      this.profiles.delete(id);
+      changed = true;
+    }
+    for (const id of this.transcripts.keys()) if (!this.state.terminals[id]) this.transcripts.delete(id);
+    const listed = [...Object.values(this.state.terminals), ...this.state.groups.flatMap((g) => g.workspaces)].flatMap((o) => o.agentSessions ?? []);
+    this.usage.keepOnly(listed.map((s) => s.file));
+    if (changed) this.changed();
+  }
+
+  /** Everything the usage window of an agent shows. */
+  private async usageDetails(terminalId: string): Promise<UsageDetails | null> {
+    const terminal = this.state.terminals[terminalId];
+    const job = terminal?.job;
+    const recipe = job?.recipe ? this.recipes.find((r) => r.name === job.recipe) : undefined;
+    if (!terminal || !job || !recipe?.usage) return null;
+    const file = await this.sessionFile(terminal, recipe, job);
+    if (!file) return null;
+    const { model, subagents } = await this.usage.session({ file, format: recipe.usage.format });
+    const workspace = findTerminal(this.state, terminalId)?.workspace;
+    return {
+      terminalId,
+      agent: recipe.name,
+      model: model.model,
+      context: model.context,
+      window: model.contextWindow(recipe.usage),
+      parts: model.contextParts(),
+      compactions: [...model.compactions],
+      session: { tokens: addTokens(model.tokens, subagents), requests: model.requests, subagents },
+      prompts: [...model.prompts].reverse(),
+      tab: await this.usage.totals(terminal.agentSessions ?? []),
+      workspace: await this.usage.totals(workspace?.agentSessions ?? []),
+    };
   }
 
   /** Output of each terminal in each of the last seconds, for diagnostics.log. */
@@ -631,9 +754,9 @@ class Daemon {
   private viewState(): AppState {
     const terminals: AppState['terminals'] = {};
     for (const [id, terminal] of Object.entries(this.state.terminals)) {
-      terminals[id] = { ...terminal, env: {}, job: terminal.job && { ...terminal.job, env: {} } };
+      terminals[id] = { ...terminal, env: {}, job: terminal.job && { ...terminal.job, env: {} }, agentSessions: undefined };
     }
-    return { ...this.state, terminals, closedGroups: this.closedGroups };
+    return { ...this.state, terminals, closedGroups: this.closedGroups, usage: Object.fromEntries(this.agentUsage), profiles: Object.fromEntries(this.profiles) };
   }
 
   /** Saves in the background; changes made while a save runs are written right after it. */
@@ -731,6 +854,11 @@ class Daemon {
         client.send({ type: 'peek', screens });
         break;
       }
+      case 'usage':
+        void this.usageDetails(String(msg.terminalId))
+          .catch(() => null)
+          .then((details) => client.send({ type: 'usage', terminalId: msg.terminalId, details }));
+        break;
       case 'shutdown':
         void this.shutdown(true);
         break;
