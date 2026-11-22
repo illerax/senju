@@ -82,6 +82,14 @@ describe('settings file', () => {
     expect(resolveTheme(loadSettings())).toEqual(builtinThemes['Senju Dark']);
   });
 
+  it('keeps notification reasons that are off, and turns on the rest', () => {
+    saveSettings({ notifyOn: { ...defaultSettings.notifyOn, finished: false } });
+    fs.writeFileSync(path.join(home, 'settings.json'), JSON.stringify({ notifyOn: { finished: false } }));
+    expect(loadSettings().notifyOn).toEqual({ ...defaultSettings.notifyOn, finished: false });
+    saveSettings({ notifyOn: defaultSettings.notifyOn });
+    expect(file().notifyOn).toBeUndefined();
+  });
+
   it('turns an old inline theme into a custom theme', () => {
     fs.writeFileSync(path.join(home, 'settings.json'), JSON.stringify({ theme: { background: '#101010' } }));
     const settings = loadSettings();

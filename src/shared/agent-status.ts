@@ -6,6 +6,9 @@ import type { TerminalState } from './types';
 /** working: busy with a task; waiting: needs the user; done: finished, ready for the next task. Also the CSS classes. */
 export type AgentKind = 'working' | 'waiting' | 'done';
 
+/** Why an agent needs the user; each can be turned off for notifications (`notifyOn`). */
+export type NeedReason = 'permission' | 'question' | 'finished' | 'failed' | 'input';
+
 export interface AgentStatus {
   kind: AgentKind;
   text: string;
@@ -15,6 +18,8 @@ export interface AgentStatus {
   exact: boolean;
   /** The agent waits for the user: to allow a tool, answer, or give the next task. */
   needsYou: boolean;
+  /** Why it needs the user, when it does. */
+  reason?: NeedReason;
 }
 
 /**
@@ -25,30 +30,31 @@ export function agentStatus(terminal: TerminalState | undefined): AgentStatus | 
   const agent = terminal?.agent;
   if (agent) {
     const activity = agent.activity;
-    const status = (kind: AgentKind, text: string, needsYou: boolean, withActivity = false): AgentStatus => ({
+    const status = (kind: AgentKind, text: string, reason: NeedReason | null, withActivity = false): AgentStatus => ({
       kind,
       text,
       ...(withActivity && activity ? { activity } : {}),
       exact: true,
-      needsYou,
+      needsYou: reason !== null,
+      ...(reason ? { reason } : {}),
     });
     switch (agent.state) {
       case 'working':
-        return status('working', 'working', false, true);
+        return status('working', 'working', null, true);
       case 'permission':
-        return status('waiting', 'needs permission', true, true);
+        return status('waiting', 'needs permission', 'permission', true);
       case 'question':
-        return status('waiting', 'has a question', true, true);
+        return status('waiting', 'has a question', 'question', true);
       case 'error':
-        return status('waiting', agent.error ? `failed: ${agent.error}` : 'failed', true);
+        return status('waiting', agent.error ? `failed: ${agent.error}` : 'failed', 'failed');
       case 'done':
-        return status('done', 'finished', true);
+        return status('done', 'finished', 'finished');
       // Resumes by itself when its background task finishes.
       case 'background':
-        return status('working', 'in background', false, true);
+        return status('working', 'in background', null, true);
       // The user stopped it and knows.
       case 'waiting':
-        return status('done', 'stopped', false);
+        return status('done', 'stopped', null);
       case 'ended':
         return null;
     }
@@ -56,7 +62,7 @@ export function agentStatus(terminal: TerminalState | undefined): AgentStatus | 
   if (!terminal?.job?.recipe) return null;
   return terminal.busy
     ? { kind: 'working', text: 'working', exact: false, needsYou: false }
-    : { kind: 'waiting', text: 'waiting for input', exact: false, needsYou: true };
+    : { kind: 'waiting', text: 'waiting for input', exact: false, needsYou: true, reason: 'input' };
 }
 
 /** A guessed wait is only believed once it lasts: an agent may just pause its output. */

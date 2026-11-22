@@ -1,6 +1,7 @@
 // The settings page: keyboard shortcuts and themes. Every change is saved
 // right away and applied to the running window.
 
+import type { NeedReason } from '../shared/agent-status';
 import { commandCategories, commandIds, commands, defaultBindings, type Command } from '../shared/commands';
 import type { Settings } from '../shared/settings';
 import type { UpdateAction, UpdateStatus } from '../shared/update';
@@ -37,7 +38,7 @@ export interface SettingsContext {
   confirm: (message: string, detail: string) => Promise<boolean>;
 }
 
-type Page = 'shortcuts' | 'theme' | 'about';
+type Page = 'shortcuts' | 'theme' | 'notifications' | 'about';
 
 const el = <K extends keyof HTMLElementTagNameMap>(tag: K, className = '', text = ''): HTMLElementTagNameMap[K] => {
   const node = document.createElement(tag);
@@ -93,6 +94,7 @@ export class SettingsView {
     for (const [page, label] of [
       ['shortcuts', 'Keyboard Shortcuts'],
       ['theme', 'Theme'],
+      ['notifications', 'Notifications'],
       ['about', 'About'],
     ] as const) {
       const button = el('button', 'settings-nav-item', label);
@@ -169,8 +171,54 @@ export class SettingsView {
     if (this.element.hidden) return;
     for (const [page, button] of this.navButtons) button.classList.toggle('active', page === this.page);
     const scroll = this.content.scrollTop;
-    this.content.replaceChildren(this.page === 'shortcuts' ? this.shortcutsPage() : this.page === 'theme' ? this.themePage() : this.aboutPage());
+    const pages: Record<Page, () => HTMLElement> = {
+      shortcuts: () => this.shortcutsPage(),
+      theme: () => this.themePage(),
+      notifications: () => this.notificationsPage(),
+      about: () => this.aboutPage(),
+    };
+    this.content.replaceChildren(pages[this.page]());
     this.content.scrollTop = scroll;
+  }
+
+  // --- notifications ---
+
+  private notificationsPage(): HTMLElement {
+    const page = el('div', 'settings-page');
+    page.append(el('h2', '', 'Notifications'));
+    const settings = this.ctx.settings();
+    const checkbox = (text: string, checked: boolean, change: (checked: boolean) => void, disabled = false) => {
+      const label = el('label', 'checkbox');
+      const box = el('input');
+      box.type = 'checkbox';
+      box.checked = checked;
+      box.disabled = disabled;
+      box.addEventListener('change', () => change(box.checked));
+      label.append(box, document.createTextNode(text));
+      return label;
+    };
+    page.append(
+      checkbox('Notify me when an agent I am not looking at needs me', settings.notifications, (on) => void this.ctx.save({ notifications: on }).then(() => this.render())),
+      el(
+        'p',
+        'settings-hint',
+        'A system notification tells you when an agent in another workspace or tab, or in a window you are not using, needs you. Clicking it shows that agent. The app icon and the window title count the agents waiting for you either way.',
+      ),
+      el('h3', '', 'Notify when an agent'),
+    );
+    const reasons: [NeedReason, string][] = [
+      ['permission', 'Asks for permission'],
+      ['question', 'Has a question'],
+      ['finished', 'Finished its task'],
+      ['failed', 'Failed, e.g. on a rate limit'],
+      ['input', 'Waits for input (agents that do not report their status)'],
+    ];
+    for (const [reason, text] of reasons) {
+      page.append(
+        checkbox(text, settings.notifyOn[reason], (on) => void this.ctx.save({ notifyOn: { ...this.ctx.settings().notifyOn, [reason]: on } }), !settings.notifications),
+      );
+    }
+    return page;
   }
 
   // --- about ---
@@ -212,24 +260,9 @@ export class SettingsView {
         this.ctx.copy(rows.map(([t, v]) => `${t}: ${v}`).join('\n'));
         copy.textContent = 'Copied';
       });
-      page.append(copy, ...this.notificationSection(), updates, ...this.problemSection());
+      page.append(copy, updates, ...this.problemSection());
     });
     return page;
-  }
-
-  private notificationSection(): HTMLElement[] {
-    const label = el('label', 'checkbox');
-    const box = el('input');
-    box.type = 'checkbox';
-    box.checked = this.ctx.settings().notifications;
-    box.addEventListener('change', () => void this.ctx.save({ notifications: box.checked }));
-    label.append(box, document.createTextNode('Notify me when an agent I am not looking at needs me'));
-    const note = el(
-      'p',
-      'settings-hint',
-      'A system notification tells you when an agent in another workspace or tab, or in a window you are not using, asks for permission, has a question, finished or failed. Clicking it shows that agent. The app icon and the window title count the agents waiting for you either way.',
-    );
-    return [el('h3', '', 'Notifications'), label, note];
   }
 
   private problemSection(): HTMLElement[] {
