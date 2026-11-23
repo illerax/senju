@@ -261,6 +261,9 @@ c.send({ type: 'input', terminalId: termD, data: 'k' });
 check(await waitFor(agentIs('done', undefined), 25_000), 'an agent whose background commands are gone counts as finished');
 const stopped = fs.readFileSync(path.join(home, 'diagnostics.log'), 'utf8').split('\n').filter((l) => l.includes('agent stopped with background work'));
 check(stopped.length === 1 && stopped[0].includes('shell:running') && !stopped[0].includes('npm run build'), 'diagnostics.log records background task types, not commands');
+// A new turn first: the agent is already finished, and keys sent at once would arrive as one.
+c.send({ type: 'input', terminalId: termD, data: 'p' });
+await waitFor(agentIs('working', 'Bash: npm test'));
 c.send({ type: 'input', terminalId: termD, data: 's' });
 check(await waitFor(agentIs('done', undefined)), 'agent hooks report the end of the turn');
 check(fs.readdirSync(path.join(home, 'events')).length === 0, 'reported events are removed');
