@@ -8,7 +8,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import type { AgentState } from '../shared/types';
+import type { AgentState, BackgroundTask } from '../shared/types';
 
 /** The events Senju listens to; each one only reports, never decides. */
 const EVENTS = [
@@ -101,8 +101,8 @@ export function applyHookEvent(previous: AgentState | undefined, event: HookEven
     case 'Stop': {
       // Claude Code resumes the agent when a background task finishes or a
       // scheduled wakeup fires, so the turn is over but the task is not.
-      const waitsFor = backgroundWork(event);
-      return waitsFor ? { state: 'background', activity: waitsFor, at } : { state: 'done', at };
+      const tasks = backgroundWork(event);
+      return tasks.length > 0 ? { state: 'background', activity: backgroundSummary(tasks), tasks, at } : { state: 'done', at };
     }
     case 'StopFailure': {
       const reason = [event.error_type, event.error, event.reason].find((v) => typeof v === 'string' && v) as string | undefined;
@@ -113,20 +113,43 @@ export function applyHookEvent(previous: AgentState | undefined, event: HookEven
   }
 }
 
-/** What a stopped agent still waits for: "Bash: npm run build", "3 background tasks", "scheduled wakeup". */
-export function backgroundWork(event: Pick<HookEvent, 'background_tasks' | 'session_crons'>): string | undefined {
+const MAX_TASKS = 10;
+
+/** The background work a stopped agent waits for: tasks still in flight and scheduled wakeups. */
+export function backgroundWork(event: Pick<HookEvent, 'background_tasks' | 'session_crons'>): BackgroundTask[] {
   const list = (value: unknown) => (Array.isArray(value) ? value.filter((v): v is Record<string, unknown> => !!v && typeof v === 'object') : []);
+  const tasks: BackgroundTask[] = [];
   // Entries of finished tasks may still be listed.
-  const tasks = list(event.background_tasks).filter((t) => t.status === undefined || t.status === 'running' || t.status === 'pending');
-  if (tasks.length > 1) return `${tasks.length} background tasks`;
-  const [task] = tasks;
-  if (task) {
+  for (const task of list(event.background_tasks)) {
+    if (task.status !== undefined && task.status !== 'running' && task.status !== 'pending') continue;
     const text = (key: string) => (typeof task[key] === 'string' && task[key] ? (task[key] as string) : undefined);
     const command = text('command')?.split('\n')[0];
-    const what = task.type === 'shell' && command ? `Bash: ${command}` : (text('description') ?? command ?? text('name') ?? 'background task');
-    return truncate(what);
+    const type = text('type') ?? 'task';
+    tasks.push({ type, text: truncate(type === 'shell' && command ? `Bash: ${command}` : (text('description') ?? command ?? text('name') ?? type)) });
   }
-  return list(event.session_crons).length > 0 ? 'scheduled wakeup' : undefined;
+  for (const cron of list(event.session_crons)) {
+    const prompt = typeof cron.prompt === 'string' ? cron.prompt.split('\n')[0] : '';
+    tasks.push({ type: 'scheduled', text: truncate(prompt ? `scheduled: ${prompt}` : 'scheduled wakeup') });
+  }
+  return tasks.slice(0, MAX_TASKS);
+}
+
+/** Background work in a few words: "Bash: npm run build", "3 background tasks". */
+export function backgroundSummary(tasks: BackgroundTask[]): string | undefined {
+  if (tasks.length > 1) return `${tasks.length} background tasks`;
+  return tasks[0]?.type === 'scheduled' ? 'scheduled wakeup' : tasks[0]?.text;
+}
+
+/** The background tasks of a Stop as diagnostics.log records them: types and states, no commands. */
+export function backgroundDiagnostics(event: Pick<HookEvent, 'background_tasks' | 'session_crons'>): { tasks: string[]; crons: number } | null {
+  const tasks = Array.isArray(event.background_tasks) ? event.background_tasks : [];
+  const crons = Array.isArray(event.session_crons) ? event.session_crons.length : 0;
+  if (tasks.length === 0 && crons === 0) return null;
+  const field = (task: unknown, key: string) => {
+    const value = task && typeof task === 'object' ? (task as Record<string, unknown>)[key] : undefined;
+    return typeof value === 'string' ? value : '?';
+  };
+  return { tasks: tasks.slice(0, MAX_TASKS).map((t) => `${field(t, 'type')}:${field(t, 'status')}`), crons };
 }
 
 const MAX_ACTIVITY = 80;

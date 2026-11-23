@@ -152,6 +152,31 @@ async function inspectDarwin(shellPids: number[]): Promise<Map<number, TerminalP
   return result;
 }
 
+/** Whether a process has child processes; null where that cannot be told, or the process is gone. */
+export async function hasChildren(pid: number): Promise<boolean | null> {
+  if (process.platform === 'linux') {
+    // Each thread lists the children it started.
+    const threads = await fs.readdir(`/proc/${pid}/task`).catch(() => null);
+    if (!threads) return null;
+    for (const thread of threads) {
+      const children = await fs.readFile(`/proc/${pid}/task/${thread}/children`, 'utf8').catch(() => null);
+      // A thread may end while it is read.
+      if (children?.trim()) return true;
+    }
+    return false;
+  }
+  if (process.platform === 'darwin') {
+    try {
+      await run('pgrep', ['-P', String(pid)], { timeout: DARWIN_TIMEOUT_MS, killSignal: 'SIGKILL' });
+      return true;
+    } catch (err) {
+      // pgrep exits with 1 when nothing matches.
+      return (err as { code?: unknown }).code === 1 ? false : null;
+    }
+  }
+  return null;
+}
+
 /** Inspects the terminals with the given shell pids; the result has an entry for each pid. */
 export async function inspectTerminals(shellPids: number[]): Promise<Map<number, TerminalProcesses>> {
   if (process.platform === 'darwin') return inspectDarwin(shellPids);

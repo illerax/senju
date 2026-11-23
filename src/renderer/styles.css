@@ -410,6 +410,10 @@ input.rename {
   color: var(--done);
 }
 
+.workspace-meta.background {
+  color: var(--link);
+}
+
 .sidebar-footer {
   display: flex;
   align-items: center;
@@ -665,6 +669,7 @@ body.resizing-column * {
 .tab-mark.working,
 .tab-mark.waiting,
 .tab-mark.done,
+.tab-mark.background,
 .tab-mark.running {
   display: block;
 }
@@ -679,6 +684,10 @@ body.resizing-column * {
 
 .tab-mark.done {
   color: var(--done);
+}
+
+.tab-mark.background {
+  color: var(--link);
 }
 
 .tab-mark.running {
@@ -961,8 +970,15 @@ body.resizing-column * {
 
 .status-item.working::before,
 .status-item.waiting::before,
-.status-item.done::before {
+.status-item.done::before,
+.status-item.background::before {
   content: '●';
+}
+
+/* Hollow: nothing to do until its background work ends. */
+.status-item.background::before {
+  content: '○';
+  color: var(--link);
 }
 
 .status-item.done::before {
@@ -1926,6 +1942,11 @@ body.overview-open #workspace {
 
 .overview-card.done .overview-status::before {
   color: var(--done);
+}
+
+.overview-card.background .overview-status::before {
+  content: '○';
+  color: var(--link);
 }
 
 .overview-place {

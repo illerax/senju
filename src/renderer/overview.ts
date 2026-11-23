@@ -10,9 +10,8 @@ export interface OverviewCard {
   terminalId: string;
   name: string;
   kind: AgentKind;
+  /** The status with how long it has lasted, e.g. "finished 12m". */
   text: string;
-  /** How long the agent has waited for the user, e.g. "12m". */
-  waited: string | null;
   activity?: string;
   /** Group and workspace. */
   place: string;
@@ -111,7 +110,7 @@ export class Overview {
       const e = this.cardElements(card.terminalId);
       e.card.className = `overview-card ${card.kind}`;
       e.name.textContent = card.name;
-      e.status.textContent = card.waited ? `${card.text} ${card.waited}` : card.text;
+      e.status.textContent = card.text;
       e.place.textContent = card.place;
       e.activity.textContent = card.activity ?? '';
       e.activity.hidden = !card.activity;

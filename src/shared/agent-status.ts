@@ -3,8 +3,12 @@
 
 import type { TerminalState } from './types';
 
-/** working: busy with a task; waiting: needs the user; done: finished, ready for the next task. Also the CSS classes. */
-export type AgentKind = 'working' | 'waiting' | 'done';
+/**
+ * working: busy with a task; waiting: needs the user; done: finished, ready
+ * for the next task; background: ended its turn and goes on by itself when
+ * its background work ends. Also the CSS classes.
+ */
+export type AgentKind = 'working' | 'waiting' | 'done' | 'background';
 
 /** Why an agent needs the user; each can be turned off for notifications (`notifyOn`). */
 export type NeedReason = 'permission' | 'question' | 'finished' | 'failed' | 'input';
@@ -20,6 +24,9 @@ export interface AgentStatus {
   needsYou: boolean;
   /** Why it needs the user, when it does. */
   reason?: NeedReason;
+  /** In the background: since when, and what it waits for. */
+  since?: number;
+  tasks?: string[];
 }
 
 /**
@@ -51,7 +58,7 @@ export function agentStatus(terminal: TerminalState | undefined): AgentStatus | 
         return status('done', 'finished', 'finished');
       // Resumes by itself when its background task finishes.
       case 'background':
-        return status('working', 'in background', null, true);
+        return { ...status('background', 'in background', null, true), since: agent.at, ...(agent.tasks?.length ? { tasks: agent.tasks.map((t) => t.text) } : {}) };
       // The user stopped it and knows.
       case 'waiting':
         return status('done', 'stopped', null);
