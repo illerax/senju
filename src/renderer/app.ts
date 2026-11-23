@@ -14,7 +14,7 @@ import type { Action, DaemonMessage, SplitSide } from '../shared/protocol';
 import type { Settings } from '../shared/settings';
 import type { UpdateStatus } from '../shared/update';
 import { clampZoom, isLight, resolveTheme, zoomPercent } from '../shared/themes';
-import type { AppState, GroupState, LayoutNode, PaneNode, SplitNode, TerminalState, WorkspaceState } from '../shared/types';
+import { windowView, type AppState, type GroupState, type LayoutNode, type PaneNode, type SplitNode, type TerminalState, type WindowView, type WorkspaceState } from '../shared/types';
 import { findPaneNode, panes, terminalIds } from '../shared/layout';
 import { agentStatus, Attention, formatWait, nextInQueue, type AgentKind, type AgentStatus, type Wait } from '../shared/agent-status';
 import { senju } from './api';
@@ -33,7 +33,10 @@ const SLOW_RENDER_MS = 100;
 
 type UiMessage = DaemonMessage | { type: 'connected'; outdated: boolean };
 
-let state: AppState;
+/** This window's share of the state; `shared` is the state of all windows. */
+let state: WindowView;
+let shared: AppState;
+const windowId = new URLSearchParams(location.search).get('window') ?? '';
 let settings: Settings;
 let platform: string;
 let home: string;
@@ -302,6 +305,7 @@ function groupElementsFor(groupId: string): GroupElements {
       { id: 'rename', label: 'Rename Group' },
       { id: 'cwd', label: 'Change Default Path…' },
       { id: '-', label: '' },
+      { id: 'window', label: 'Move to Window', submenu: windowChoices() },
       { id: 'close', label: 'Close Group' },
       { id: 'export', label: 'Save Group As…' },
       { id: 'delete', label: 'Delete Group' },
@@ -311,6 +315,8 @@ function groupElementsFor(groupId: string): GroupElements {
     if (choice === 'workspace') act({ type: 'createWorkspace', groupId });
     if (choice === 'rename') rename();
     if (choice === 'cwd') void changeGroupCwd(group);
+    if (choice === 'window:new') senju.newWindow(groupId);
+    else if (choice?.startsWith('window:')) act({ type: 'moveGroupToWindow', groupId, windowId: choice.slice('window:'.length) });
     if (choice === 'delete') void deleteGroup(group);
     if (choice === 'close') void closeGroup(group);
     if (choice === 'export') void exportGroup(group);
@@ -319,7 +325,7 @@ function groupElementsFor(groupId: string): GroupElements {
   dropZone(header, ['group', 'workspace'], (kind, id) => {
     const group = groupById(groupId);
     if (!group) return;
-    if (kind === 'group') act({ type: 'moveGroup', groupId: id, toIndex: state.groups.indexOf(group) });
+    if (kind === 'group') act({ type: 'moveGroup', groupId: id, toIndex: shared.groups.indexOf(group) });
     else act({ type: 'moveWorkspace', workspaceId: id, groupId, toIndex: group.workspaces.length });
   });
   g = { item, chevron, name, path, header, list };
@@ -426,6 +432,23 @@ function renderSidebar(): void {
   for (const id of workspaceElements.keys()) if (!workspaceIds.has(id)) workspaceElements.delete(id);
 }
 
+/** Where a group can move: a new window, or another window, named by its groups. */
+function windowChoices(): MenuItem[] {
+  const others = shared.windows.filter((w) => w.id !== state.windowId);
+  return [
+    { id: 'window:new', label: 'New Window' },
+    ...(others.length ? [{ id: '-', label: '' }] : []),
+    ...others.map((w, i) => {
+      const names = shared.groups.filter((g) => g.windowId === w.id).map((g) => g.name);
+      return { id: `window:${w.id}`, label: names.length ? truncate(names.join(', '), 48) : `Empty window ${i + 1}` };
+    }),
+  ];
+}
+
+function truncate(text: string, max: number): string {
+  return text.length > max ? `${text.slice(0, max - 1)}…` : text;
+}
+
 async function changeGroupCwd(group: GroupState): Promise<void> {
   const folder = await senju.pickFolder(group.cwd);
   if (folder) act({ type: 'setGroupCwd', groupId: group.id, cwd: folder });
@@ -462,7 +485,7 @@ async function exportGroup(group: GroupState): Promise<void> {
 
 async function importGroup(): Promise<void> {
   const file = await senju.openGroupFile();
-  if (file) act({ type: 'importGroup', file });
+  if (file) act({ type: 'importGroup', file, windowId: state.windowId });
 }
 
 /** Closed groups to reopen, newest first, and opening a group from a file. */
@@ -481,7 +504,7 @@ async function closedGroupsMenu(at: HTMLElement): Promise<void> {
     ],
     at,
   );
-  if (choice?.startsWith('reopen:')) act({ type: 'reopenGroup', closedId: choice.slice('reopen:'.length) });
+  if (choice?.startsWith('reopen:')) act({ type: 'reopenGroup', closedId: choice.slice('reopen:'.length), windowId: state.windowId });
   if (choice?.startsWith('forget:')) act({ type: 'forgetClosedGroup', closedId: choice.slice('forget:'.length) });
   if (choice === 'import') void importGroup();
 }
@@ -1077,7 +1100,7 @@ function renderStatus(): void {
 }
 
 function setSidebarHidden(hidden: boolean): void {
-  act({ type: 'setUi', ui: { sidebarHidden: hidden } });
+  act({ type: 'setUi', windowId: state.windowId, ui: { sidebarHidden: hidden } });
 }
 
 function render(force = false): void {
@@ -1283,7 +1306,7 @@ function cycle<T>(items: T[], index: number, step: number): T | undefined {
 
 /** New groups start in the home directory with a generated name; rename by double click. */
 function newGroup(): void {
-  act({ type: 'createGroup', name: '', cwd: home });
+  act({ type: 'createGroup', name: '', cwd: home, windowId: state.windowId });
 }
 
 async function runCommand(command: Command): Promise<void> {
@@ -1306,6 +1329,8 @@ async function runCommand(command: Command): Promise<void> {
   switch (command) {
     case 'newGroup':
       return void newGroup();
+    case 'newWindow':
+      return senju.newWindow();
     case 'toggleSidebar':
       return setSidebarHidden(!state.ui.sidebarHidden);
     case 'newWorkspace': {
@@ -1452,7 +1477,8 @@ function onMessage(msg: UiMessage): void {
       showOutdated(msg.outdated);
       break;
     case 'state': {
-      state = msg.state;
+      shared = msg.state;
+      state = windowView(msg.state, windowId);
       const active = activeContext();
       if (active) lastWorkspace.set(active.group.id, active.workspace.id);
       for (const [id, view] of terminals) {
@@ -1627,6 +1653,10 @@ async function main(): Promise<void> {
   senju.onMessage((msg) => onMessage(msg as UiMessage));
   showOutdated(await senju.daemonOutdated());
   senju.onUpdate(showUpdate);
+  senju.onSettings((next) => {
+    applySettings(next as Settings);
+    settingsView.render();
+  });
   senju.onNotificationClick((terminalId) => goToTerminal(terminalId));
   for (const event of ['focus', 'blur'] as const) window.addEventListener(event, refreshAttention);
   document.addEventListener('visibilitychange', refreshAttention);

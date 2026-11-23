@@ -128,7 +128,7 @@ async function client() {
     }
   });
   c.send = (msg) => socket.write(`${JSON.stringify(msg)}\n`);
-  c.send({ type: 'hello', protocol: 2 });
+  c.send({ type: 'hello', protocol: 3 });
   await waitFor(() => c.state);
   return c;
 }
@@ -225,7 +225,7 @@ check(await waitFor(() => savedState().terminals[termB].env?.MYVAR === '42'), 'r
 c.send({ type: 'action', action: { type: 'createWorkspace', groupId: group.id } });
 await waitFor(() => workspaces().length === 3);
 const agentWorkspace = () => c.state.groups[0].workspaces.find((w) => panesOf(w.root).some((p) => p.tabs.includes(termD)));
-const termD = focusedPane(workspaces().find((w) => w.id === c.state.activeWorkspaceId)).activeTab;
+const termD = focusedPane(workspaces().find((w) => w.id === c.state.windows[0].activeWorkspaceId)).activeTab;
 c.send({ type: 'action', action: { type: 'splitPane', paneId: focusedPane(agentWorkspace()).id, side: 'down' } });
 await waitFor(() => agentWorkspace().root.type === 'split');
 const termE = focusedPane(agentWorkspace()).activeTab;

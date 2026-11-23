@@ -20,6 +20,8 @@ const api = {
   openExternal: (url: string) => ipcRenderer.send('openExternal', url),
   openConfig: (what: 'settings' | 'recipes' | 'logs') => ipcRenderer.send('openConfig', what),
   stopAll: () => ipcRenderer.send('stopAll'),
+  /** Opens a new window, empty or showing a group moved from this one. */
+  newWindow: (groupId?: string) => ipcRenderer.send('newWindow', groupId),
   daemonOutdated: () => ipcRenderer.invoke('daemonOutdated') as Promise<boolean>,
   appInfo: () =>
     ipcRenderer.invoke('appInfo') as Promise<{ version: string; build: string; electron: string; chrome: string; node: string; platform: string; daemonOutdated: boolean }>,
@@ -34,6 +36,10 @@ const api = {
   setBadge: (count: number) => ipcRenderer.send('setBadge', count),
   onNotificationClick: (callback: (terminalId: string) => void) => {
     ipcRenderer.on('notificationClick', (_e, terminalId) => callback(terminalId));
+  },
+  /** Settings saved in another window. */
+  onSettings: (callback: (settings: unknown) => void) => {
+    ipcRenderer.on('settings', (_e, settings) => callback(settings));
   },
   onUpdate: (callback: (status: UpdateStatus) => void) => {
     ipcRenderer.on('update', (_e, status) => callback(status));

@@ -38,7 +38,7 @@ socket.on('data', (chunk) => {
   }
 });
 const send = (msg) => socket.write(`${JSON.stringify(msg)}\n`);
-send({ type: 'hello', protocol: 2 });
+send({ type: 'hello', protocol: 3 });
 send({ type: 'action', action: { type: 'createGroup', name: 'lat', cwd: home } });
 while (!state?.groups.length) await sleep(50);
 const root = () => state.groups[0].workspaces[0].root;

@@ -58,6 +58,7 @@ export const commands = {
   copy: { label: 'Copy', category: 'Clipboard', linux: ['Ctrl+Shift+C'], mac: ['Cmd+C'] },
   paste: { label: 'Paste', category: 'Clipboard', linux: ['Ctrl+Shift+V', 'Shift+Insert'], mac: ['Cmd+V'] },
 
+  newWindow: { label: 'New window', category: 'Window', linux: ['Ctrl+Shift+O'], mac: ['Cmd+Shift+O'] },
   toggleSidebar: { label: 'Show or hide the sidebar', category: 'Window', linux: ['Ctrl+Shift+B'], mac: ['Cmd+B'] },
   toggleOverview: { label: 'Show or hide all agents', category: 'Window', linux: ['Ctrl+Shift+A'], mac: ['Cmd+Shift+A'] },
   openSettings: { label: 'Open settings', category: 'Window', linux: ['Ctrl+Shift+,'], mac: ['Cmd+,'] },

@@ -51,7 +51,7 @@ async function until(label, predicate, ms) {
 function daemon(messages = []) {
   return new Promise((resolve, reject) => {
     const socket = net.connect(path.join(home, 'daemon.sock'), () => {
-      for (const msg of [{ type: 'hello', protocol: 2 }, ...messages]) socket.write(`${JSON.stringify(msg)}\n`);
+      for (const msg of [{ type: 'hello', protocol: 3 }, ...messages]) socket.write(`${JSON.stringify(msg)}\n`);
     });
     let buffer = '';
     socket.on('data', (chunk) => {
@@ -136,7 +136,7 @@ try {
 } finally {
   for (const pid of appProcesses()) process.kill(pid, 'SIGTERM');
   if (daemonPid && alive(daemonPid)) {
-    const socket = net.connect(path.join(home, 'daemon.sock'), () => socket.end(`${JSON.stringify({ type: 'hello', protocol: 2 })}\n${JSON.stringify({ type: 'shutdown' })}\n`));
+    const socket = net.connect(path.join(home, 'daemon.sock'), () => socket.end(`${JSON.stringify({ type: 'hello', protocol: 3 })}\n${JSON.stringify({ type: 'shutdown' })}\n`));
     socket.on('error', () => {});
     await until('the daemon to stop', () => !alive(daemonPid), 20000).catch(() => process.kill(daemonPid, 'SIGKILL'));
   }

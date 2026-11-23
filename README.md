@@ -26,6 +26,7 @@ Close the window, crash it, update it or reboot the computer: the layout, the ta
 - Maximize a pane to read it over the whole workspace (the button in its tab bar, its context menu or the shortcut), and restore it the same way; moving the focus to another pane restores it too.
 - Colors for workspaces, drag and drop for groups, workspaces and tabs (also between panes), inline renaming.
 - Close a group you are not working on (**Close Group** in its context menu): its processes stop and it is saved to disk. Reopen it from the clock button at the top of the sidebar, and it comes back at its place with its workspaces, layout and scrollback, agents resuming their sessions as after a reboot. **Save Group As…** writes a group to a `.senju` file, and **Open Group from File…** in the same menu opens one as a new group, e.g. on another computer.
+- Several windows, each with its own groups: open an empty one with Ctrl+Shift+O (Cmd+Shift+O), or move a group to a new or another window with **Move to Window** in its context menu. Senju opens every window again with its groups, place and size. Closing a window while others are open moves its groups to the end of the window you used before it; their processes keep running.
 - A collapsible sidebar that shrinks to a rail of workspace markers.
 
 **See what your agents are doing**
@@ -127,7 +128,7 @@ Create a group with **+** at the top of the sidebar; it starts in your home fold
 - Ctrl+Shift+F (Cmd+F on macOS) or **Find…** in a terminal's context menu searches the tab's whole scrollback, starting from the selected text. Every match is highlighted; Enter and Shift+Enter step through them, **Aa** matches case, **.\*** takes a regular expression, and Escape closes the search.
 - Exiting a shell closes its tab; the last tab closes its pane, and the last pane its workspace.
 
-Closing the window only closes the UI: every terminal keeps running and is there when you open Senju again. To stop everything, use **Quit and stop all processes** at the bottom of the settings; the next start restores the terminals as after a reboot.
+Closing the last window only closes the UI: every terminal keeps running and is there, in every window, when you open Senju again. To stop everything, use **Quit and stop all processes** at the bottom of the settings; the next start restores the terminals as after a reboot.
 
 ### Keyboard shortcuts
 
@@ -155,6 +156,7 @@ Change any of them in **Settings → Keyboard Shortcuts** (the gear at the botto
 | Find in the terminal | Ctrl+Shift+F | Cmd+F |
 | The agent's context and tokens | Ctrl+Shift+K | Cmd+Shift+K |
 | Copy / paste | Ctrl+Shift+C / V, Shift+Insert | Cmd+C / V |
+| New window | Ctrl+Shift+O | Cmd+Shift+O |
 | Show / hide the sidebar | Ctrl+Shift+B | Cmd+B |
 | Settings | Ctrl+Shift+, | Cmd+, |
 | Zoom the tab in / out | Ctrl+Shift+= / - | Cmd+= / - |

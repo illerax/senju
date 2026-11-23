@@ -29,7 +29,7 @@ await page.evaluate(() => {
 });
 
 const state = () => page.evaluate(() => window.senju.state());
-const active = (st) => st.groups.flatMap((g) => g.workspaces).find((w) => w.id === st.activeWorkspaceId);
+const active = (st) => st.groups.flatMap((g) => g.workspaces).find((w) => w.id === st.windows[0].activeWorkspaceId);
 const panesOf = (node) => (node.type === 'pane' ? [node] : node.children.flatMap(panesOf));
 /** Time from a key press until the UI shows its effect. */
 async function timed(press, done, arg = null) {
