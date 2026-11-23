@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.12](https://github.com/illerax/senju/compare/v0.1.11...v0.1.12) (2026-11-23)
+
+
+### Features
+
+* notifications page in settings, with a switch per reason ([#42](https://github.com/illerax/senju/issues/42)) ([7c55209](https://github.com/illerax/senju/commit/7c55209cb32f4c185cb78071bc9f98797315af9f))
+* show agents in background apart from working ones, with what they wait for ([#44](https://github.com/illerax/senju/issues/44)) ([8f5bb1d](https://github.com/illerax/senju/commit/8f5bb1d0c1e0d82538594b2070d01435b6f6e265))
+
 ## [0.1.11](https://github.com/illerax/senju/compare/v0.1.10...v0.1.11) (2026-11-22)
 
 
