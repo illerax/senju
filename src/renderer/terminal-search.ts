@@ -110,6 +110,14 @@ export class TerminalSearch {
     this.onClose();
   }
 
+  /** Steps to the next or previous match of the last search with the bar closed; false when there is none. */
+  findAgain(previous: boolean): boolean {
+    const text = this.input.value;
+    if (!text || (this.regex && !validRegex(text))) return false;
+    const options: ISearchOptions = { caseSensitive: this.caseSensitive, regex: this.regex };
+    return previous ? this.addon.findPrevious(text, options) : this.addon.findNext(text, options);
+  }
+
   /** Searches again with the current theme's colors, e.g. after the theme changed. */
   refresh(): void {
     if (this.isOpen && this.input.value) this.find('incremental');

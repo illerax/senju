@@ -126,13 +126,14 @@ Create a group with **+** at the top of the sidebar; it starts in your home fold
 - Ctrl+mouse wheel (Cmd+wheel or a pinch on macOS) zooms the text of the tab under the pointer; so do the tab zoom shortcuts below for the focused tab. Other shortcuts zoom all terminals, and a tab's own zoom adds to that. While the focused tab is zoomed, the status bar shows its zoom; click it to return the tab to the font's own size. A terminal's context menu has **Reset Tab Zoom** and **Reset Zoom of All Terminals**. Both zooms are kept across restarts.
 - Select text with the mouse; on Linux it also goes to the primary selection, and a middle click pastes it. Ctrl+click (Cmd+click on macOS) opens a link in the browser, including links that programs print with a different text (OSC 8 hyperlinks); hovering one shows its address.
 - Ctrl+Shift+F (Cmd+F on macOS) or **Find…** in a terminal's context menu searches the tab's whole scrollback, starting from the selected text. Every match is highlighted; Enter and Shift+Enter step through them, **Aa** matches case, **.\*** takes a regular expression, and Escape closes the search.
+- Ctrl+Shift+Space (Cmd+Shift+Space on macOS) or **Copy Mode** in a terminal's context menu selects and copies text with the keyboard alone, from the screen or the scrollback. A cursor appears; a bar at the bottom of the terminal lists the keys, as you set them. By default: h j k l or the arrows move, w and b go by words, 0 and $ (Home, End) to the ends of a line, PageUp and PageDown by pages, g and G to the top and the bottom. v starts selecting, V selects whole lines, / finds text and n and N step through the matches. y or Enter copies the selection, or the cursor's line without one, and leaves copy mode; Escape or q leaves without copying. No key reaches the program in the terminal meanwhile, so an agent's output can be copied while it works.
 - Exiting a shell closes its tab; the last tab closes its pane, and the last pane its workspace.
 
 Closing the last window only closes the UI: every terminal keeps running and is there, in every window, when you open Senju again. To stop everything, use **Quit and stop all processes** at the bottom of the settings; the next start restores the terminals as after a reboot.
 
 ### Keyboard shortcuts
 
-Change any of them in **Settings → Keyboard Shortcuts** (the gear at the bottom of the sidebar).
+Change any of them in **Settings → Keyboard Shortcuts** (the gear at the bottom of the sidebar), where each group of shortcuts, copy mode keys among them, has its own page.
 
 | Action | Linux, Windows | macOS |
 | --- | --- | --- |
@@ -156,6 +157,7 @@ Change any of them in **Settings → Keyboard Shortcuts** (the gear at the botto
 | Find in the terminal | Ctrl+Shift+F | Cmd+F |
 | The agent's context and tokens | Ctrl+Shift+K | Cmd+Shift+K |
 | Copy / paste | Ctrl+Shift+C / V, Shift+Insert | Cmd+C / V |
+| Copy mode | Ctrl+Shift+Space | Cmd+Shift+Space |
 | New window | Ctrl+Shift+O | Cmd+Shift+O |
 | Show / hide the sidebar | Ctrl+Shift+B | Cmd+B |
 | Settings | Ctrl+Shift+, | Cmd+, |

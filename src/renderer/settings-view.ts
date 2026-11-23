@@ -2,7 +2,7 @@
 // right away and applied to the running window.
 
 import type { NeedReason } from '../shared/agent-status';
-import { commandCategories, commandIds, commands, defaultBindings, type Command } from '../shared/commands';
+import { commandCategories, commandIds, commands, commandScope, defaultBindings, type Command, type CommandCategory } from '../shared/commands';
 import type { Settings } from '../shared/settings';
 import type { UpdateAction, UpdateStatus } from '../shared/update';
 import { builtinThemes, resolveFont, resolveTheme, themeKeys, type Font, type Theme, type ThemeColor } from '../shared/themes';
@@ -74,7 +74,11 @@ export class SettingsView {
   readonly element = el('div', 'settings');
   private readonly content = el('div', 'settings-content');
   private readonly navButtons = new Map<Page, HTMLButtonElement>();
+  private readonly categoryButtons = new Map<CommandCategory, HTMLButtonElement>();
+  private readonly categoryNav = el('div', 'settings-subnav');
   private page: Page = 'shortcuts';
+  /** The group of shortcuts shown; null shows all of them. */
+  private category: CommandCategory | null = null;
   private filter = '';
   private notice = '';
   /** The shortcut being recorded: a command and the index of the replaced shortcut, or -1 to add one. */
@@ -98,9 +102,22 @@ export class SettingsView {
       ['about', 'About'],
     ] as const) {
       const button = el('button', 'settings-nav-item', label);
-      button.addEventListener('click', () => this.show(page));
+      button.addEventListener('click', () => {
+        if (page === 'shortcuts') this.category = null;
+        this.show(page);
+      });
       this.navButtons.set(page, button);
       nav.append(button);
+      if (page === 'shortcuts') nav.append(this.categoryNav);
+    }
+    for (const category of commandCategories) {
+      const button = el('button', 'settings-nav-item sub', category);
+      button.addEventListener('click', () => {
+        this.category = category;
+        this.show('shortcuts');
+      });
+      this.categoryButtons.set(category, button);
+      this.categoryNav.append(button);
     }
     nav.append(el('div', 'settings-spacer'));
     const action = (label: string, run: () => void, icon: Parameters<typeof iconSvg>[0], extra = '') => {
@@ -169,7 +186,10 @@ export class SettingsView {
 
   render(): void {
     if (this.element.hidden) return;
-    for (const [page, button] of this.navButtons) button.classList.toggle('active', page === this.page);
+    const shortcuts = this.page === 'shortcuts';
+    for (const [page, button] of this.navButtons) button.classList.toggle('active', page === this.page && !(shortcuts && this.category));
+    this.categoryNav.hidden = !shortcuts;
+    for (const [category, button] of this.categoryButtons) button.classList.toggle('active', shortcuts && category === this.category);
     const scroll = this.content.scrollTop;
     const pages: Record<Page, () => HTMLElement> = {
       shortcuts: () => this.shortcutsPage(),
@@ -324,12 +344,14 @@ export class SettingsView {
 
   private shortcutsPage(): HTMLElement {
     const page = el('div', 'settings-page');
-    page.append(el('h2', '', 'Keyboard Shortcuts'));
+    page.append(el('h2', '', this.category ? `Keyboard Shortcuts: ${this.category}` : 'Keyboard Shortcuts'));
     page.append(
       el(
         'p',
         'settings-hint',
-        'Click a shortcut to change it, or + to add another one. Shortcuts with Ctrl+Shift (Cmd on macOS) never collide with programs running in a terminal.',
+        this.category === 'Copy mode'
+          ? 'These keys work only in copy mode, which takes every key away from the program in the terminal, so plain keys are fine. Click a key to change it, or + to add another one.'
+          : 'Click a shortcut to change it, or + to add another one. Shortcuts with Ctrl+Shift (Cmd on macOS) never collide with programs running in a terminal.',
       ),
     );
     const search = el('input', 'settings-search');
@@ -350,14 +372,14 @@ export class SettingsView {
     const keymap = this.keymap();
     const overrides = this.ctx.settings().keybindings;
     const query = this.filter.trim().toLowerCase();
-    for (const category of commandCategories) {
+    for (const category of this.category ? [this.category] : commandCategories) {
       const rows = commandIds.filter((id) => {
         const info = commands[id];
         if (info.category !== category) return false;
         return !query || info.label.toLowerCase().includes(query) || keymap.shortcuts(id).some((s) => s.toLowerCase().includes(query));
       });
       if (rows.length === 0) continue;
-      page.append(el('h3', '', category));
+      if (!this.category) page.append(el('h3', '', category));
       const table = el('div', 'shortcut-table');
       for (const command of rows) table.append(this.shortcutRow(command, keymap, command in overrides));
       page.append(table);
@@ -372,8 +394,9 @@ export class SettingsView {
     const shortcuts = keymap.shortcuts(command);
     shortcuts.forEach((accelerator, index) => {
       const recording = this.recording?.command === command && this.recording.index === index;
-      const chip = el('span', `key-chip${recording ? ' recording' : ''}${isRiskyAccelerator(accelerator) ? ' risky' : ''}`);
-      if (isRiskyAccelerator(accelerator)) chip.title = 'Programs in the terminal will not receive this key';
+      const risky = commandScope(command) === 'app' && isRiskyAccelerator(accelerator);
+      const chip = el('span', `key-chip${recording ? ' recording' : ''}${risky ? ' risky' : ''}`);
+      if (risky) chip.title = 'Programs in the terminal will not receive this key';
       const text = el('button', 'key-chip-text', recording ? 'Press keys…' : accelerator);
       text.addEventListener('click', () => this.startRecording(command, index));
       const remove = iconButton('close', 'Remove shortcut', 'key-chip-remove');
@@ -413,14 +436,15 @@ export class SettingsView {
     const keymap = this.keymap();
     const overrides = { ...this.ctx.settings().keybindings };
     // A shortcut belongs to one command: take it away from any other.
-    const taken = keymap.commandsFor(normalized).filter((c) => c !== target.command);
+    const scope = commandScope(target.command);
+    const taken = keymap.commandsFor(normalized, scope).filter((c) => c !== target.command);
     for (const other of taken) overrides[other] = keymap.shortcuts(other).filter((s) => s !== normalized);
     const current = [...keymap.shortcuts(target.command)];
     if (target.index >= 0 && target.index < current.length) current[target.index] = normalized;
     else current.push(normalized);
     overrides[target.command] = [...new Set(current)];
     this.notice = taken.length ? `${normalized} was removed from: ${taken.map((c) => commands[c].label).join(', ')}.` : '';
-    if (isRiskyAccelerator(normalized)) this.notice += `${this.notice ? ' ' : ''}${normalized} has no Ctrl or Cmd, so programs in the terminal will no longer receive it.`;
+    if (scope === 'app' && isRiskyAccelerator(normalized)) this.notice += `${this.notice ? ' ' : ''}${normalized} has no Ctrl or Cmd, so programs in the terminal will no longer receive it.`;
     void this.saveKeybindings(overrides);
   }
 
