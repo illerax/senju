@@ -16,12 +16,14 @@ describe('agent status', () => {
       reason: 'permission',
     });
     expect(agentStatus(terminal({ agent: { state: 'waiting', at: 0 } }))?.needsYou).toBe(false);
-    expect(agentStatus(terminal({ agent: { state: 'background', activity: 'Bash: npm run build', at: 0 } }))).toEqual({
-      kind: 'working',
+    expect(agentStatus(terminal({ agent: { state: 'background', activity: 'Bash: npm run build', tasks: [{ type: 'shell', text: 'Bash: npm run build' }], at: 5 } }))).toEqual({
+      kind: 'background',
       text: 'in background',
       activity: 'Bash: npm run build',
       exact: true,
       needsYou: false,
+      since: 5,
+      tasks: ['Bash: npm run build'],
     });
     expect(agentStatus(terminal({ agent: { state: 'ended', at: 0 } }))).toBeNull();
     expect(agentStatus(terminal({ job, busy: false }))).toMatchObject({ kind: 'waiting', exact: false, needsYou: true, reason: 'input' });

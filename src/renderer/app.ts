@@ -16,7 +16,7 @@ import type { UpdateStatus } from '../shared/update';
 import { clampZoom, isLight, resolveTheme, zoomPercent } from '../shared/themes';
 import type { AppState, GroupState, LayoutNode, PaneNode, SplitNode, TerminalState, WorkspaceState } from '../shared/types';
 import { findPaneNode, panes, terminalIds } from '../shared/layout';
-import { agentStatus, Attention, formatWait, nextInQueue, type AgentKind, type Wait } from '../shared/agent-status';
+import { agentStatus, Attention, formatWait, nextInQueue, type AgentKind, type AgentStatus, type Wait } from '../shared/agent-status';
 import { senju } from './api';
 import { confirmDialog } from './dialog';
 import { iconButton, iconSvg, logoSvg } from './icons';
@@ -148,7 +148,7 @@ function runningJobs(ids: string[]): string[] {
 }
 
 function workspaceAgents(workspace: WorkspaceState): Record<AgentKind, number> {
-  const counts = { working: 0, waiting: 0, done: 0 };
+  const counts = { working: 0, waiting: 0, done: 0, background: 0 };
   for (const id of terminalIds(workspace.root)) {
     const status = agentStatus(state.terminals[id]);
     if (status) counts[status.kind]++;
@@ -402,7 +402,7 @@ function renderSidebar(): void {
         else w.item.style.removeProperty('--ws-color');
         if (!w.name.querySelector('input')) w.name.textContent = workspace.name;
         // Working agents first: they are what the sidebar is glanced at for.
-        const status = agents.working ? 'working' : agents.waiting ? 'waiting' : agents.done ? 'done' : '';
+        const status = agents.working ? 'working' : agents.waiting ? 'waiting' : agents.done ? 'done' : agents.background ? 'background' : '';
         w.meta.className = `workspace-meta ${status}`.trim();
         w.meta.textContent = status === 'working' ? `${agents.working} working` : status || (ids.length > 1 ? String(ids.length) : '');
         w.item.title = [
@@ -410,6 +410,7 @@ function renderSidebar(): void {
           agents.working && `${agents.working} agent${agents.working > 1 ? 's' : ''} working`,
           agents.waiting && `${agents.waiting} waiting for you`,
           agents.done && `${agents.done} finished`,
+          agents.background && `${agents.background} in background`,
         ]
           .filter(Boolean)
           .join(' · ');
@@ -676,10 +677,16 @@ class PaneView {
         tab.classList.toggle('active', terminalId === node.activeTab);
         const status = agentStatus(terminal);
         mark.className = `tab-mark ${status?.kind ?? (terminal?.job ? 'running' : '')}`.trim();
-        mark.title = status ? `Agent ${status.text}` : '';
+        mark.title = status ? `Agent ${statusText(terminalId, status)}` : '';
         if (!label.querySelector('input')) label.textContent = tabLabel(terminal);
         renderTabUsage(usage, terminalId);
-        tab.title = [status && `Agent ${status.text}${status.activity ? `: ${status.activity}` : ''}`, profileText(state.profiles?.[terminalId]), jobLabel(terminal), terminal && shortPath(terminal.cwd)]
+        const doing = status?.tasks ? status.tasks.map((t) => `  ${t}`).join('\n') : status?.activity;
+        tab.title = [
+          status && `Agent ${statusText(terminalId, status)}${doing ? (status.tasks ? `, waits for:\n${doing}` : `: ${doing}`) : ''}`,
+          profileText(state.profiles?.[terminalId]),
+          jobLabel(terminal),
+          terminal && shortPath(terminal.cwd),
+        ]
           .filter(Boolean)
           .join('\n');
         return tab;
@@ -1012,10 +1019,9 @@ function renderStatus(): void {
       const terminal = state.terminals[id];
       const status = agentStatus(terminal);
       if (status) {
-        const waited = waitedFor(id);
         const context = contextLabel(id);
-        const text = `${tabLabel(terminal)} ${status.text}${waited ? ` ${waited}` : ''}${context ? ` · ${context}` : ''}`;
-        const title = [status.activity, profileText(state.profiles?.[id])].filter(Boolean).join('\n');
+        const text = `${tabLabel(terminal)} ${statusText(id, status)}${context ? ` · ${context}` : ''}`;
+        const title = [status.tasks?.join('\n') ?? status.activity, profileText(state.profiles?.[id])].filter(Boolean).join('\n');
         parts.push(item(status.kind, status.activity ? `${text} · ${status.activity}` : text, title));
       }
     }
@@ -1025,7 +1031,7 @@ function renderStatus(): void {
   for (const group of state.groups) {
     for (const workspace of group.workspaces) {
       const counts = workspaceAgents(workspace);
-      agents += counts.working + counts.waiting + counts.done;
+      agents += counts.working + counts.waiting + counts.done + counts.background;
       const kind = counts.waiting ? 'waiting' : counts.done ? 'done' : null;
       if (workspace.id !== ctx?.workspace.id && kind) {
         // The longest wait of the workspace, as the queue is sorted.
@@ -1162,9 +1168,15 @@ function waitedFor(terminalId: string): string | null {
   return wait ? formatWait(Date.now() - wait.since) : null;
 }
 
+/** The status with how long the agent has waited for the user or for its background work: "finished 12m". */
+function statusText(terminalId: string, status: AgentStatus): string {
+  const age = waitedFor(terminalId) ?? (status.since ? formatWait(Date.now() - status.since) : null);
+  return age ? `${status.text} ${age}` : status.text;
+}
+
 // The wait times in the status bar move on.
 setInterval(() => {
-  if (!waitingAgents.length || !state) return;
+  if (!state || (!waitingAgents.length && !Object.values(state.terminals).some((t) => t.agent?.state === 'background'))) return;
   renderStatus();
   overview.update();
 }, 15_000);
@@ -1207,9 +1219,8 @@ function overviewCards(): OverviewCard[] {
         terminalId,
         name: tabLabel(terminal),
         kind: status.kind,
-        text: status.text,
-        waited: waitedFor(terminalId),
-        activity: status.activity,
+        text: statusText(terminalId, status),
+        activity: status.tasks?.join(' · ') ?? status.activity,
         place: `${place.group.name} / ${place.workspace.name}`,
         profile: profileText(state.profiles?.[terminalId]) || undefined,
         context: contextLabel(terminalId),

@@ -85,10 +85,20 @@ export interface AgentState {
    * in the background state, what the agent waits for.
    */
   activity?: string;
+  /** In the background state, each task or scheduled wakeup it waits for. */
+  tasks?: BackgroundTask[];
   /** Why the turn failed, e.g. "rate limit". */
   error?: string;
   /** When the state last changed. */
   at: number;
+}
+
+/** Background work of an agent, as Claude Code lists it when a turn ends. */
+export interface BackgroundTask {
+  /** shell, monitor, subagent, workflow, MCP task…; scheduled for a wakeup. */
+  type: string;
+  /** What it runs, e.g. "Bash: npm run build" or a subagent's description. */
+  text: string;
 }
 
 export interface TerminalState {

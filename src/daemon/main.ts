@@ -8,13 +8,13 @@ import path from 'node:path';
 import { PROTOCOL_VERSION, type Action, type ClientMessage, type DaemonMessage } from '../shared/protocol';
 import { BUILD_ID } from '../shared/build';
 import { paths } from '../shared/paths';
-import { applyHookEvent, EventSpool, hookEnv, writeHookPlugin, type HookEvent } from './agent-hooks';
+import { applyHookEvent, backgroundDiagnostics, EventSpool, hookEnv, writeHookPlugin, type HookEvent } from './agent-hooks';
 import { describeSaved, insertRestored, listClosed, readSavedGroup, restoreGroup, snapshotGroup, writeSavedGroup } from './closed-groups';
 import { diagnose, diagnoseError, systemInfo, watchEventLoop } from '../shared/diagnostics';
 import { loadSettings, type Settings } from '../shared/settings';
 import type { AppState, ClosedGroupInfo, JobState, SavedGroup, TerminalState } from '../shared/types';
 import { baseEnv, BUSY_MS, TerminalSession } from './terminal';
-import { inspectTerminals, type ProcessInfo } from './procinfo';
+import { hasChildren, inspectTerminals, type ProcessInfo } from './procinfo';
 import { findSessionFile, listSessions, loadRecipes, programOf, matchRecipe, requiredFiles, sessionFromArgs, sessionFromPidFile, type Recipe } from './recipes';
 import { planRestore } from './restore';
 import { envDiff } from './shellquote';
@@ -38,6 +38,14 @@ const SCROLLBACK_QUIET_MS = 15000;
 const SCROLLBACK_BUSY_MS = 60000;
 /** How long a vanished job or shell is kept, so processes killed by a shutdown are still restored. */
 const EXIT_GRACE_MS = 3000;
+/**
+ * An agent that waits only for background commands but has had no child
+ * process this long is done: Claude Code still lists tasks that are gone.
+ * Long enough for it to resume after a command it waited for ends.
+ */
+const ORPHAN_TASKS_MS = 15_000;
+/** Task types that run as child processes of the agent. */
+const PROCESS_TASKS = new Set(['shell', 'monitor']);
 
 /** Runs a periodic task, starting the next run only after the previous one has finished. */
 function repeat(task: () => Promise<void>, ms: number): void {
@@ -119,6 +127,8 @@ interface Tracked {
   /** Ends the busy state once the job has been quiet for BUSY_MS. */
   quiet?: NodeJS.Timeout;
   shellEnv?: Record<string, string>;
+  /** Since when an agent in the background state has had no child process. */
+  childlessSince?: number;
 }
 
 class Daemon {
@@ -176,8 +186,14 @@ class Daemon {
     const terminal = this.state.terminals[terminalId];
     if (!terminal || this.shuttingDown) return;
     if (typeof event.transcript_path === 'string' && event.transcript_path) this.transcripts.set(terminalId, event.transcript_path);
+    if (event.hook_event_name === 'Stop') {
+      // What Claude Code lists as still running, to tell stale entries from real work.
+      const background = backgroundDiagnostics(event);
+      if (background) diagnose('daemon', 'agent stopped with background work', { terminal: this.describe(terminalId), ...background });
+    }
     const next = applyHookEvent(terminal.agent, event, Date.now());
-    const same = (a = terminal.agent, b = next) => a?.state === b?.state && a?.activity === b?.activity && a?.error === b?.error;
+    const same = (a = terminal.agent, b = next) =>
+      a?.state === b?.state && a?.activity === b?.activity && a?.error === b?.error && JSON.stringify(a?.tasks) === JSON.stringify(b?.tasks);
     if (same()) return;
     terminal.agent = next;
     this.changed();
@@ -557,6 +573,11 @@ class Daemon {
           terminal.agent = { state: 'waiting', at: now };
           changed = true;
         }
+        if (await this.backgroundGone(terminal, tracked, now)) {
+          if (this.shuttingDown || this.sessions.get(terminalId) !== session) return;
+          terminal.agent = { state: 'done', at: now };
+          changed = true;
+        }
 
         if (info.job) {
           if (tracked.jobGone) {
@@ -595,6 +616,27 @@ class Daemon {
       }),
     );
     if (changed) this.changed();
+  }
+
+  /**
+   * Whether an agent in the background state waits only for commands that
+   * are gone: none of its tasks runs outside its process, and it has had no
+   * child process for ORPHAN_TASKS_MS.
+   */
+  private async backgroundGone(terminal: TerminalState, tracked: Tracked, now: number): Promise<boolean> {
+    const agent = terminal.agent;
+    if (agent?.state !== 'background' || !agent.tasks?.length || !agent.tasks.every((t) => PROCESS_TASKS.has(t.type)) || !tracked.agentPid) {
+      tracked.childlessSince = undefined;
+      return false;
+    }
+    if ((await hasChildren(tracked.agentPid)) !== false) {
+      tracked.childlessSince = undefined;
+      return false;
+    }
+    tracked.childlessSince ??= now;
+    if (now - tracked.childlessSince < ORPHAN_TASKS_MS || terminal.agent !== agent) return false;
+    tracked.childlessSince = undefined;
+    return true;
   }
 
   /**

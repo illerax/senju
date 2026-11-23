@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { applyHookEvent, backgroundWork, hookEnv, toolActivity } from '../src/daemon/agent-hooks';
+import { applyHookEvent, backgroundDiagnostics, backgroundSummary, backgroundWork, hookEnv, toolActivity } from '../src/daemon/agent-hooks';
 
 describe('agent hook events', () => {
   const at = 1000;
@@ -23,17 +23,27 @@ describe('agent hook events', () => {
   it('keeps an agent that waits for background work apart from a finished one', () => {
     const shell = { id: 'b1', type: 'shell', status: 'running', description: 'Run the build', command: 'npm run build\nnpm test' };
     const stop = (background_tasks?: unknown, session_crons?: unknown) => applyHookEvent(undefined, { hook_event_name: 'Stop', background_tasks, session_crons }, at);
-    expect(stop([shell], [])).toEqual({ state: 'background', activity: 'Bash: npm run build', at });
+    expect(stop([shell], [])).toEqual({ state: 'background', activity: 'Bash: npm run build', tasks: [{ type: 'shell', text: 'Bash: npm run build' }], at });
     // Claude Code without the fields, or with nothing in flight.
     expect(stop()).toEqual({ state: 'done', at });
     expect(stop([], [])).toEqual({ state: 'done', at });
     expect(stop([{ ...shell, status: 'completed' }], [])).toEqual({ state: 'done', at });
     // Claude Code resumes it with the task's notification as a prompt.
     expect(applyHookEvent(stop([shell]), { hook_event_name: 'UserPromptSubmit' }, at)).toEqual({ state: 'working', at });
-    expect(backgroundWork({ background_tasks: [{ type: 'subagent', status: 'running', description: 'Review the diff' }] })).toBe('Review the diff');
-    expect(backgroundWork({ background_tasks: [shell, { type: 'monitor', status: 'running' }] })).toBe('2 background tasks');
-    expect(backgroundWork({ background_tasks: [], session_crons: [{ id: 'c1', schedule: '*/5 * * * *' }] })).toBe('scheduled wakeup');
-    expect(backgroundWork({ background_tasks: 'nonsense', session_crons: null })).toBeUndefined();
+    const subagent = { type: 'subagent', status: 'running', description: 'Review the diff' };
+    expect(backgroundWork({ background_tasks: [subagent] })).toEqual([{ type: 'subagent', text: 'Review the diff' }]);
+    const several = backgroundWork({ background_tasks: [shell, { type: 'monitor', status: 'running' }], session_crons: [{ id: 'c1', prompt: 'check CI\nthen report' }] });
+    expect(several).toEqual([
+      { type: 'shell', text: 'Bash: npm run build' },
+      { type: 'monitor', text: 'monitor' },
+      { type: 'scheduled', text: 'scheduled: check CI' },
+    ]);
+    expect(backgroundSummary(several)).toBe('3 background tasks');
+    expect(backgroundSummary(backgroundWork({ session_crons: [{ id: 'c1', schedule: '*/5 * * * *' }] }))).toBe('scheduled wakeup');
+    expect(backgroundWork({ background_tasks: 'nonsense', session_crons: null })).toEqual([]);
+    // diagnostics.log gets types and states, never commands.
+    expect(backgroundDiagnostics({ background_tasks: [shell, { ...subagent, status: 'completed' }], session_crons: [] })).toEqual({ tasks: ['shell:running', 'subagent:completed'], crons: 0 });
+    expect(backgroundDiagnostics({ background_tasks: [], session_crons: [] })).toBeNull();
   });
 
   it('tells questions, permission notifications and failures apart', () => {

@@ -51,8 +51,12 @@ function hook(event) {
   require('child_process').execFileSync('sh', ['-c', hooks[event.hook_event_name][0].hooks[0].command], { input: JSON.stringify({ ...event, cwd: process.cwd(), transcript_path: transcript }) });
 }
 process.stdin.setRawMode(true);
+// A background command runs as a child of the agent, as in Claude Code; k ends it.
+let background = null;
 process.stdin.on('data', (d) => {
   if (d[0] === 3) process.exit(0);
+  if (d.toString() === 'b') background = require('child_process').spawn('sleep', ['600']);
+  if (d.toString() === 'k') background?.kill();
   if (d.toString() === 'u') answer();
   for (const event of hookEvents[d.toString()] ?? []) hook(event);
 });
@@ -250,6 +254,13 @@ c.send({ type: 'input', terminalId: termD, data: '\x1b' });
 check(await waitFor(agentIs('waiting', undefined)), 'an agent the user stopped is no longer waiting for permission');
 c.send({ type: 'input', terminalId: termD, data: 'b' });
 check(await waitFor(agentIs('background', 'Bash: npm run build')), 'agent hooks report a turn that waits for a background task');
+await sleep(2500);
+check(term(termD).agent?.state === 'background', 'an agent stays in the background while its command runs');
+c.send({ type: 'input', terminalId: termD, data: 'k' });
+// Claude Code may keep listing a task whose process is gone.
+check(await waitFor(agentIs('done', undefined), 25_000), 'an agent whose background commands are gone counts as finished');
+const stopped = fs.readFileSync(path.join(home, 'diagnostics.log'), 'utf8').split('\n').filter((l) => l.includes('agent stopped with background work'));
+check(stopped.length === 1 && stopped[0].includes('shell:running') && !stopped[0].includes('npm run build'), 'diagnostics.log records background task types, not commands');
 c.send({ type: 'input', terminalId: termD, data: 's' });
 check(await waitFor(agentIs('done', undefined)), 'agent hooks report the end of the turn');
 check(fs.readdirSync(path.join(home, 'events')).length === 0, 'reported events are removed');
