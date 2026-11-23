@@ -1,3 +1,4 @@
+import { terminalIds } from './layout';
 import type { AgentProfile, AgentSessionFile, AgentUsage } from './usage';
 
 // Persistent workspace state. The daemon is the single owner and writer of this
@@ -47,6 +48,8 @@ export interface GroupState {
   workspaces: WorkspaceState[];
   /** Whether the sidebar hides the group's workspaces. */
   collapsed: boolean;
+  /** The window that shows the group. */
+  windowId: string;
 }
 
 /** A program running in the foreground of a terminal's shell. */
@@ -128,12 +131,20 @@ export interface UiState {
   sidebarHidden?: boolean;
 }
 
-export interface AppState {
-  version: 2;
-  groups: GroupState[];
+/** A window of the app: it shows the groups that name it, in the order of `AppState.groups`. */
+export interface WindowState {
+  id: string;
   activeWorkspaceId: string | null;
-  terminals: Record<string, TerminalState>;
   ui: UiState;
+}
+
+export interface AppState {
+  version: 3;
+  /** Groups of every window, in sidebar order. */
+  groups: GroupState[];
+  /** Open windows; there is always at least one. */
+  windows: WindowState[];
+  terminals: Record<string, TerminalState>;
   /** Groups closed to disk, newest first. Sent to the UI only; the daemon reads them from their files. */
   closedGroups?: ClosedGroupInfo[];
   /** Context and tokens of each running agent, by terminal id. Sent to the UI only. */
@@ -171,5 +182,24 @@ export interface SavedGroup {
 }
 
 export function emptyState(): AppState {
-  return { version: 2, groups: [], activeWorkspaceId: null, terminals: {}, ui: {} };
+  return { version: 3, groups: [], windows: [], terminals: {} };
+}
+
+/** What one window shows: its groups, with its active workspace and UI state. */
+export interface WindowView extends AppState {
+  windowId: string;
+  activeWorkspaceId: string | null;
+  ui: UiState;
+}
+
+/** The state as the window `windowId` shows it; the first window stands in for one that no longer exists. */
+export function windowView(state: AppState, windowId: string): WindowView {
+  const window = state.windows.find((w) => w.id === windowId) ?? state.windows[0];
+  const id = window?.id ?? windowId;
+  const groups = state.groups.filter((g) => g.windowId === id);
+  const terminals: AppState['terminals'] = {};
+  for (const group of groups) {
+    for (const workspace of group.workspaces) for (const terminalId of terminalIds(workspace.root)) if (state.terminals[terminalId]) terminals[terminalId] = state.terminals[terminalId];
+  }
+  return { ...state, groups, terminals, windowId: id, activeWorkspaceId: window?.activeWorkspaceId ?? null, ui: window?.ui ?? {} };
 }

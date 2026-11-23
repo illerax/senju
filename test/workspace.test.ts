@@ -7,9 +7,18 @@ import { loadState } from '../src/daemon/store';
 import { findPaneNode, panes, terminalIds } from '../src/shared/layout';
 import { emptyState, type AppState } from '../src/shared/types';
 
+const W = 'win';
+
+/** An empty state with one window. */
+function newState(): AppState {
+  return { ...emptyState(), windows: [{ id: W, activeWorkspaceId: null, ui: {} }] };
+}
+
+const active = (state: AppState, windowId = W) => state.windows.find((w) => w.id === windowId)?.activeWorkspaceId ?? null;
+
 function setup() {
-  const state = emptyState();
-  const { created } = applyAction(state, { type: 'createGroup', name: 'g', cwd: '/tmp' }, '/home/u');
+  const state = newState();
+  const { created } = applyAction(state, { type: 'createGroup', windowId: W, name: 'g', cwd: '/tmp' }, '/home/u');
   const group = state.groups[0];
   const workspace = group.workspaces[0];
   return { state, group, workspace, paneId: workspace.focusedPaneId, first: created[0] };
@@ -20,7 +29,7 @@ const paneOf = (state: AppState, paneId: string) => findPane(state, paneId)!.pan
 describe('groups and workspaces', () => {
   it('creates a group with one workspace, pane and tab', () => {
     const { state, workspace, first } = setup();
-    expect(state.activeWorkspaceId).toBe(workspace.id);
+    expect(active(state)).toBe(workspace.id);
     expect(terminalIds(workspace.root)).toEqual([first]);
     expect(state.terminals[first].cwd).toBe('/tmp');
   });
@@ -29,12 +38,12 @@ describe('groups and workspaces', () => {
     const { state, group } = setup();
     applyAction(state, { type: 'createWorkspace', groupId: group.id }, '/');
     expect(group.workspaces.map((w) => w.name)).toEqual(['Workspace 1', 'Workspace 2']);
-    expect(state.activeWorkspaceId).toBe(group.workspaces[1].id);
+    expect(active(state)).toBe(group.workspaces[1].id);
   });
 
   it('moves a workspace to another group', () => {
     const { state, group, workspace } = setup();
-    applyAction(state, { type: 'createGroup', name: 'h', cwd: '/' }, '/');
+    applyAction(state, { type: 'createGroup', windowId: W, name: 'h', cwd: '/' }, '/');
     const other = state.groups[1];
     applyAction(state, { type: 'moveWorkspace', workspaceId: workspace.id, groupId: other.id, toIndex: 0 }, '/');
     expect(group.workspaces).toHaveLength(0);
@@ -43,20 +52,20 @@ describe('groups and workspaces', () => {
 
   it('reorders groups', () => {
     const { state } = setup();
-    applyAction(state, { type: 'createGroup', name: 'h', cwd: '/' }, '/');
+    applyAction(state, { type: 'createGroup', windowId: W, name: 'h', cwd: '/' }, '/');
     applyAction(state, { type: 'moveGroup', groupId: state.groups[1].id, toIndex: 0 }, '/');
     expect(state.groups.map((g) => g.name)).toEqual(['h', 'g']);
   });
 
   it('deletes a group with all its terminals and picks another workspace', () => {
     const { state, group } = setup();
-    applyAction(state, { type: 'createGroup', name: 'h', cwd: '/' }, '/');
+    applyAction(state, { type: 'createGroup', windowId: W, name: 'h', cwd: '/' }, '/');
     const other = state.groups[1];
     applyAction(state, { type: 'activateWorkspace', workspaceId: group.workspaces[0].id }, '/');
     applyAction(state, { type: 'deleteGroup', groupId: group.id }, '/');
     expect(state.groups).toEqual([other]);
     expect(Object.keys(state.terminals)).toEqual(terminalIds(other.workspaces[0].root));
-    expect(state.activeWorkspaceId).toBe(other.workspaces[0].id);
+    expect(active(state)).toBe(other.workspaces[0].id);
   });
 });
 
@@ -96,7 +105,7 @@ describe('panes and tabs', () => {
     closeTerminal(state, first, effects);
     expect(effects.removed).toEqual([first]);
     expect(group.workspaces).toHaveLength(0);
-    expect(state.activeWorkspaceId).toBeNull();
+    expect(active(state)).toBeNull();
   });
 
   it('closing a pane closes all its tabs', () => {
@@ -128,7 +137,79 @@ describe('panes and tabs', () => {
   });
 });
 
+describe('windows', () => {
+  it('keeps the groups, active workspace and UI of each window apart', () => {
+    const { state, group, workspace } = setup();
+    applyAction(state, { type: 'createWindow', windowId: 'w2' }, '/');
+    applyAction(state, { type: 'createGroup', windowId: 'w2', name: 'h', cwd: '/' }, '/');
+    const other = state.groups[1];
+    expect(other.windowId).toBe('w2');
+    expect(active(state)).toBe(workspace.id);
+    expect(active(state, 'w2')).toBe(other.workspaces[0].id);
+    applyAction(state, { type: 'createWorkspace', groupId: group.id }, '/');
+    expect(active(state)).toBe(group.workspaces[1].id);
+    expect(active(state, 'w2')).toBe(other.workspaces[0].id);
+    applyAction(state, { type: 'setUi', windowId: 'w2', ui: { sidebarHidden: true } }, '/');
+    expect(state.windows.map((w) => !!w.ui.sidebarHidden)).toEqual([false, true]);
+  });
+
+  it('moves a group to another window and shows it there', () => {
+    const { state, group, workspace } = setup();
+    applyAction(state, { type: 'createGroup', windowId: W, name: 'h', cwd: '/' }, '/');
+    applyAction(state, { type: 'activateWorkspace', workspaceId: workspace.id }, '/');
+    applyAction(state, { type: 'createWindow', windowId: 'w2', groupId: group.id }, '/');
+    expect(group.windowId).toBe('w2');
+    expect(active(state, 'w2')).toBe(workspace.id);
+    expect(active(state)).toBe(state.groups.find((g) => g.name === 'h')!.workspaces[0].id);
+    applyAction(state, { type: 'moveGroupToWindow', groupId: group.id, windowId: W }, '/');
+    expect(group.windowId).toBe(W);
+    expect(state.groups.at(-1)).toBe(group);
+    expect(active(state, 'w2')).toBeNull();
+  });
+
+  it('closing a window moves its groups to the end of another, but keeps the last window', () => {
+    const { state, group } = setup();
+    applyAction(state, { type: 'createWindow', windowId: 'w2' }, '/');
+    applyAction(state, { type: 'createGroup', windowId: 'w2', name: 'h', cwd: '/' }, '/');
+    applyAction(state, { type: 'createGroup', windowId: W, name: 'i', cwd: '/' }, '/');
+    applyAction(state, { type: 'closeWindow', windowId: 'w2', into: W }, '/');
+    expect(state.windows.map((w) => w.id)).toEqual([W]);
+    expect(state.groups.map((g) => [g.name, g.windowId])).toEqual([['g', W], ['i', W], ['h', W]]);
+    expect(active(state)).toBe(state.groups[1].workspaces[0].id);
+    applyAction(state, { type: 'closeWindow', windowId: W, into: W }, '/');
+    expect(state.windows).toHaveLength(1);
+    expect(group.windowId).toBe(W);
+  });
+
+  it('gives a state without windows one window', () => {
+    const state = emptyState();
+    applyAction(state, { type: 'createGroup', windowId: 'gone', name: 'g', cwd: '/' }, '/');
+    expect(state.windows).toHaveLength(1);
+    expect(state.groups[0].windowId).toBe(state.windows[0].id);
+    expect(state.windows[0].activeWorkspaceId).toBe(state.groups[0].workspaces[0].id);
+  });
+});
+
 describe('loadState', () => {
+  it('puts the groups of a version 2 state into one window', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'senju-'));
+    const file = path.join(dir, 'state.json');
+    const pane = { type: 'pane', id: 'p', tabs: ['t'], activeTab: 't' };
+    const v2 = {
+      version: 2,
+      groups: [{ id: 'g', name: 'g', cwd: '/', collapsed: false, workspaces: [{ id: 'w', name: 'Workspace 1', root: pane, focusedPaneId: 'p' }] }],
+      activeWorkspaceId: 'w',
+      terminals: { t: { id: 't', cwd: '/', cols: 80, rows: 24, env: {} } },
+      ui: { sidebarHidden: true, bounds: { x: 1, y: 2, width: 3, height: 4, maximized: false } },
+    };
+    fs.writeFileSync(file, JSON.stringify(v2));
+    const state = loadState(file);
+    fs.rmSync(dir, { recursive: true });
+    expect(state.version).toBe(3);
+    expect(state.windows).toEqual([{ id: state.groups[0].windowId, activeWorkspaceId: 'w', ui: v2.ui }]);
+    expect('activeWorkspaceId' in state || 'ui' in state).toBe(false);
+  });
+
   it('migrates projects with windows into groups with workspaces', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'senju-'));
     const file = path.join(dir, 'state.json');
@@ -157,8 +238,10 @@ describe('loadState', () => {
     fs.writeFileSync(file, JSON.stringify(v1));
     const state = loadState(file);
     fs.rmSync(dir, { recursive: true });
-    expect(state.version).toBe(2);
-    expect(state.activeWorkspaceId).toBe('w');
+    expect(state.version).toBe(3);
+    expect(state.windows).toHaveLength(1);
+    expect(state.groups[0].windowId).toBe(state.windows[0].id);
+    expect(state.windows[0].activeWorkspaceId).toBe('w');
     const workspace = state.groups[0].workspaces[0];
     expect(terminalIds(workspace.root)).toEqual(['a', 'b']);
     expect(findPaneNode(workspace.root, workspace.focusedPaneId)?.tabs).toEqual(['b']);
@@ -168,9 +251,9 @@ describe('loadState', () => {
 
 describe('group names', () => {
   it('names groups without a name Group N', () => {
-    const state = emptyState();
-    applyAction(state, { type: 'createGroup', name: '', cwd: '/home/u' }, '/home/u');
-    applyAction(state, { type: 'createGroup', name: '', cwd: '/home/u' }, '/home/u');
+    const state = newState();
+    applyAction(state, { type: 'createGroup', windowId: W, name: '', cwd: '/home/u' }, '/home/u');
+    applyAction(state, { type: 'createGroup', windowId: W, name: '', cwd: '/home/u' }, '/home/u');
     expect(state.groups.map((g) => g.name)).toEqual(['Group 1', 'Group 2']);
     expect(state.groups[0].cwd).toBe('/home/u');
   });

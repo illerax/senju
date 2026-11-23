@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { AppState, ClosedGroupInfo, GroupState, LayoutNode, SavedGroup, TerminalState } from '../shared/types';
 import { terminalIds } from '../shared/layout';
-import { newId } from './workspace';
+import { newId, repairWindows, windowOf } from './workspace';
 
 /** Everything about a group needed to open it again; `scrollback` by terminal id. */
 export function snapshotGroup(state: AppState, groupId: string, scrollback: Record<string, string>, now: number): SavedGroup | null {
@@ -20,7 +20,8 @@ export function snapshotGroup(state: AppState, groupId: string, scrollback: Reco
       if (terminal) terminals[id] = { ...structuredClone(terminal), agent: undefined, busy: undefined };
     }
   }
-  const active = group.workspaces.some((w) => w.id === state.activeWorkspaceId) ? state.activeWorkspaceId : null;
+  const shown = state.windows.find((w) => w.id === group.windowId)?.activeWorkspaceId ?? null;
+  const active = group.workspaces.some((w) => w.id === shown) ? shown : null;
   return {
     format: 'senju-group',
     version: 1,
@@ -70,11 +71,13 @@ export function restoreGroup(saved: SavedGroup): RestoredGroup {
   return { group, terminals, scrollback, activeWorkspaceId: active ?? group.workspaces[0]?.id ?? null };
 }
 
-/** Puts a restored group at its old place among the groups and shows it. */
-export function insertRestored(state: AppState, restored: RestoredGroup, index: number): void {
+/** Puts a restored group at its old place among the groups and shows it in a window. */
+export function insertRestored(state: AppState, restored: RestoredGroup, index: number, windowId: string): void {
+  repairWindows(state);
+  restored.group.windowId = (state.windows.find((w) => w.id === windowId) ?? state.windows[0]).id;
   state.groups.splice(Math.max(0, Math.min(index, state.groups.length)), 0, restored.group);
   Object.assign(state.terminals, restored.terminals);
-  if (restored.activeWorkspaceId) state.activeWorkspaceId = restored.activeWorkspaceId;
+  if (restored.activeWorkspaceId) windowOf(state, restored.group).activeWorkspaceId = restored.activeWorkspaceId;
 }
 
 /** Reads a saved group, checking its shape; throws with a readable message otherwise. */

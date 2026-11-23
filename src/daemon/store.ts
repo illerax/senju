@@ -6,7 +6,7 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { emptyState, type AppState, type LayoutNode } from '../shared/types';
+import { emptyState, type AppState, type GroupState, type LayoutNode, type UiState } from '../shared/types';
 
 interface V1Layout {
   type: 'pane' | 'split';
@@ -22,12 +22,32 @@ interface V1State {
   projects: { id: string; name: string; cwd: string; windows: { id: string; name: string; root: V1Layout; focusedPaneId: string }[]; activeWindowId: string | null }[];
   activeProjectId: string | null;
   panes: AppState['terminals'];
-  ui: AppState['ui'];
+  ui: UiState;
+}
+
+interface V2State {
+  version: 2;
+  groups: Omit<GroupState, 'windowId'>[];
+  activeWorkspaceId: string | null;
+  terminals: AppState['terminals'];
+  ui: UiState;
+}
+
+const newId = () => crypto.randomUUID().replace(/-/g, '').slice(0, 12);
+
+/** Version 2 had one window: it becomes the first window, holding every group. */
+function migrateV2(old: V2State): AppState {
+  const windowId = newId();
+  return {
+    version: 3,
+    groups: old.groups.map((g) => ({ ...g, windowId })),
+    windows: [{ id: windowId, activeWorkspaceId: old.activeWorkspaceId ?? null, ui: old.ui ?? {} }],
+    terminals: old.terminals ?? {},
+  };
 }
 
 /** Version 1 had projects with windows of single-terminal panes; each pane becomes a pane with one tab. */
-function migrateV1(old: V1State): AppState {
-  const id = () => crypto.randomUUID().replace(/-/g, '').slice(0, 12);
+function migrateV1(old: V1State): V2State {
   const active = old.projects.find((p) => p.id === old.activeProjectId);
   return {
     version: 2,
@@ -40,7 +60,7 @@ function migrateV1(old: V1State): AppState {
         const leafIds = new Map<string, string>();
         const convert = (node: V1Layout): LayoutNode => {
           if (node.type === 'pane') {
-            const leaf = id();
+            const leaf = newId();
             leafIds.set(node.paneId!, leaf);
             return { type: 'pane', id: leaf, tabs: [node.paneId!], activeTab: node.paneId! };
           }
@@ -67,8 +87,9 @@ export function loadState(file: string): AppState {
     try {
       const parsed = JSON.parse(fs.readFileSync(candidate, 'utf8'));
       let state: AppState | null = null;
-      if (parsed?.version === 1 && Array.isArray(parsed.projects)) state = migrateV1(parsed);
-      if (parsed?.version === 2 && Array.isArray(parsed.groups)) state = { ...emptyState(), ...parsed };
+      if (parsed?.version === 1 && Array.isArray(parsed.projects)) state = migrateV2(migrateV1(parsed));
+      if (parsed?.version === 2 && Array.isArray(parsed.groups)) state = migrateV2(parsed);
+      if (parsed?.version === 3 && Array.isArray(parsed.groups)) state = { ...emptyState(), ...parsed };
       if (!state) continue;
       // Older state files kept the scrollback inline; move it to its own files.
       for (const terminal of Object.values(state.terminals) as (AppState['terminals'][string] & { scrollback?: string })[]) {

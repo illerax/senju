@@ -3,7 +3,7 @@
 
 import crypto from 'node:crypto';
 import type { Action } from '../shared/protocol';
-import type { AppState, GroupState, PaneNode, TerminalState, WorkspaceState } from '../shared/types';
+import type { AppState, GroupState, PaneNode, TerminalState, WindowState, WorkspaceState } from '../shared/types';
 import { findPaneNode, paneIds, paneOfTerminal, panes, removePane, setSplitSizes, splitPane, terminalIds, updatePane } from '../shared/layout';
 
 export interface Effects {
@@ -89,35 +89,62 @@ function dropTerminals(state: AppState, ids: string[], effects: Effects): void {
   }
 }
 
-/** Picks another active workspace when the active one is gone, preferring its neighbors. */
+/** The window that shows a group; a group naming no window belongs to the first. */
+export function windowOf(state: AppState, group: GroupState): WindowState {
+  return state.windows.find((w) => w.id === group.windowId) ?? state.windows[0];
+}
+
+/** Keeps at least one window and gives every group one that exists. */
+export function repairWindows(state: AppState): void {
+  if (!state.windows.length) state.windows.push({ id: newId(), activeWorkspaceId: null, ui: {} });
+  for (const group of state.groups) group.windowId = windowOf(state, group).id;
+}
+
+/**
+ * Picks another active workspace in each window whose active one is gone or
+ * moved away, preferring its neighbors in `previousOrder`.
+ */
 function repairActive(state: AppState, previousOrder: string[]): void {
-  const all = allWorkspaces(state);
-  if (all.some((w) => w.id === state.activeWorkspaceId)) return;
-  const index = previousOrder.indexOf(state.activeWorkspaceId ?? '');
-  const survivors = previousOrder.filter((id) => all.some((w) => w.id === id));
-  const before = previousOrder.slice(0, Math.max(0, index)).filter((id) => survivors.includes(id));
-  const after = previousOrder.slice(index + 1).filter((id) => survivors.includes(id));
-  state.activeWorkspaceId = after[0] ?? before.at(-1) ?? null;
+  for (const window of state.windows) {
+    const own = state.groups.filter((g) => g.windowId === window.id).flatMap((g) => g.workspaces.map((w) => w.id));
+    if (window.activeWorkspaceId && own.includes(window.activeWorkspaceId)) continue;
+    const index = previousOrder.indexOf(window.activeWorkspaceId ?? '');
+    const before = previousOrder.slice(0, Math.max(0, index)).filter((id) => own.includes(id));
+    const after = (index < 0 ? [] : previousOrder.slice(index + 1)).filter((id) => own.includes(id));
+    window.activeWorkspaceId = after[0] ?? before.at(-1) ?? own[0] ?? null;
+  }
+}
+
+/** Shows a workspace in its window. */
+function activate(state: AppState, group: GroupState, workspaceId: string): void {
+  windowOf(state, group).activeWorkspaceId = workspaceId;
+}
+
+/** Moves groups to the end of the sidebar of a window. */
+function moveGroupsTo(state: AppState, groups: GroupState[], window: WindowState): void {
+  for (const group of groups) {
+    state.groups.splice(state.groups.indexOf(group), 1);
+    state.groups.push(group);
+    group.windowId = window.id;
+  }
 }
 
 /** Removes a workspace from its group without touching its terminals. */
-function detachWorkspace(state: AppState, group: GroupState, workspace: WorkspaceState): void {
-  const order = allWorkspaces(state).map((w) => w.id);
+function detachWorkspace(group: GroupState, workspace: WorkspaceState): void {
   group.workspaces.splice(group.workspaces.indexOf(workspace), 1);
-  repairActive(state, order);
 }
 
 function removeWorkspace(state: AppState, group: GroupState, workspace: WorkspaceState, effects: Effects): void {
-  detachWorkspace(state, group, workspace);
+  detachWorkspace(group, workspace);
   dropTerminals(state, terminalIds(workspace.root), effects);
 }
 
 /** Takes a pane out of its workspace, closing the workspace when it was the last pane. Its terminals are kept. */
-function takePane(state: AppState, group: GroupState, workspace: WorkspaceState, paneId: string): void {
+function takePane(group: GroupState, workspace: WorkspaceState, paneId: string): void {
   const order = paneIds(workspace.root);
   const root = removePane(workspace.root, paneId);
   if (!root) {
-    detachWorkspace(state, group, workspace);
+    detachWorkspace(group, workspace);
     return;
   }
   workspace.root = root;
@@ -133,7 +160,7 @@ function takeTab(state: AppState, terminalId: string): void {
   if (!found) return;
   const { group, workspace, pane } = found;
   if (pane.tabs.length === 1) {
-    takePane(state, group, workspace, pane.id);
+    takePane(group, workspace, pane.id);
     return;
   }
   const index = pane.tabs.indexOf(terminalId);
@@ -144,27 +171,39 @@ function takeTab(state: AppState, terminalId: string): void {
 
 /** Closes a terminal's tab and forgets the terminal. */
 export function closeTerminal(state: AppState, terminalId: string, effects: Effects): void {
+  const order = allWorkspaces(state).map((w) => w.id);
   takeTab(state, terminalId);
   if (state.terminals[terminalId]) dropTerminals(state, [terminalId], effects);
+  repairActive(state, order);
 }
 
-function focus(state: AppState, workspace: WorkspaceState, paneId: string): void {
+function focus(state: AppState, group: GroupState, workspace: WorkspaceState, paneId: string): void {
   workspace.focusedPaneId = paneId;
-  state.activeWorkspaceId = workspace.id;
+  activate(state, group, workspace.id);
 }
 
 export function applyAction(state: AppState, action: Action, home: string): Effects {
+  repairWindows(state);
+  const order = allWorkspaces(state).map((w) => w.id);
+  const effects = apply(state, action, home);
+  repairActive(state, order);
+  return effects;
+}
+
+function apply(state: AppState, action: Action, home: string): Effects {
   const effects: Effects = { created: [], removed: [] };
   const group = (id: string) => state.groups.find((g) => g.id === id);
+  const windowById = (id: string) => state.windows.find((w) => w.id === id);
 
   switch (action.type) {
     case 'createGroup': {
       const cwd = action.cwd || home;
-      const g: GroupState = { id: newId(), name: action.name || nextName(state.groups.map((x) => x.name), 'Group'), cwd, workspaces: [], collapsed: false };
+      const window = windowById(action.windowId) ?? state.windows[0];
+      const g: GroupState = { id: newId(), name: action.name || nextName(state.groups.map((x) => x.name), 'Group'), cwd, workspaces: [], collapsed: false, windowId: window.id };
       const w = newWorkspace(state, g, cwd, effects);
       g.workspaces.push(w);
       state.groups.push(g);
-      state.activeWorkspaceId = w.id;
+      window.activeWorkspaceId = w.id;
       break;
     }
     case 'renameGroup': {
@@ -180,15 +219,39 @@ export function applyAction(state: AppState, action: Action, home: string): Effe
     case 'deleteGroup': {
       const g = group(action.groupId);
       if (!g) break;
-      const order = allWorkspaces(state).map((w) => w.id);
       for (const w of g.workspaces) dropTerminals(state, terminalIds(w.root), effects);
       state.groups.splice(state.groups.indexOf(g), 1);
-      repairActive(state, order);
       break;
     }
     case 'moveGroup': {
       const index = state.groups.findIndex((g) => g.id === action.groupId);
       if (index >= 0) moveWithin(state.groups, index, action.toIndex);
+      break;
+    }
+    case 'moveGroupToWindow': {
+      const g = group(action.groupId);
+      const target = windowById(action.windowId);
+      if (!g || !target || g.windowId === target.id) break;
+      const shown = g.workspaces.find((w) => w.id === windowOf(state, g).activeWorkspaceId) ?? g.workspaces[0];
+      moveGroupsTo(state, [g], target);
+      if (shown) target.activeWorkspaceId = shown.id;
+      break;
+    }
+    case 'createWindow': {
+      if (windowById(action.windowId)) break;
+      const window: WindowState = { id: action.windowId, activeWorkspaceId: null, ui: {} };
+      state.windows.push(window);
+      if (action.groupId) apply(state, { type: 'moveGroupToWindow', groupId: action.groupId, windowId: window.id }, home);
+      break;
+    }
+    case 'closeWindow': {
+      const window = windowById(action.windowId);
+      const into = windowById(action.into) ?? state.windows.find((w) => w !== window);
+      if (!window || !into || into === window) break;
+      const groups = state.groups.filter((g) => g.windowId === window.id);
+      moveGroupsTo(state, groups, into);
+      state.windows.splice(state.windows.indexOf(window), 1);
+      if (!into.activeWorkspaceId && groups[0]?.workspaces[0]) into.activeWorkspaceId = groups[0].workspaces[0].id;
       break;
     }
     case 'setGroupCollapsed': {
@@ -199,11 +262,11 @@ export function applyAction(state: AppState, action: Action, home: string): Effe
     case 'createWorkspace': {
       const g = group(action.groupId);
       if (!g) break;
-      const current = g.workspaces.find((w) => w.id === state.activeWorkspaceId);
+      const current = g.workspaces.find((w) => w.id === windowOf(state, g).activeWorkspaceId);
       const w = newWorkspace(state, g, g.cwd || home, effects);
       g.workspaces.splice(current ? g.workspaces.indexOf(current) + 1 : g.workspaces.length, 0, w);
       g.collapsed = false;
-      state.activeWorkspaceId = w.id;
+      activate(state, g, w.id);
       break;
     }
     case 'renameWorkspace': {
@@ -236,7 +299,8 @@ export function applyAction(state: AppState, action: Action, home: string): Effe
       break;
     }
     case 'activateWorkspace': {
-      if (findWorkspace(state, action.workspaceId)) state.activeWorkspaceId = action.workspaceId;
+      const found = findWorkspace(state, action.workspaceId);
+      if (found) activate(state, found.group, action.workspaceId);
       break;
     }
     case 'splitPane': {
@@ -244,19 +308,19 @@ export function applyAction(state: AppState, action: Action, home: string): Effe
       if (!found) break;
       const pane = newPane(state, cwdOf(state, found.pane, found.group.cwd || home), effects);
       found.workspace.root = splitPane(found.workspace.root, action.paneId, pane, action.side, newId);
-      focus(state, found.workspace, pane.id);
+      focus(state, found.group, found.workspace, pane.id);
       break;
     }
     case 'closePane': {
       const found = findPane(state, action.paneId);
       if (!found) break;
-      takePane(state, found.group, found.workspace, found.pane.id);
+      takePane(found.group, found.workspace, found.pane.id);
       dropTerminals(state, found.pane.tabs.filter((id) => state.terminals[id]), effects);
       break;
     }
     case 'focusPane': {
       const found = findPane(state, action.paneId);
-      if (found) focus(state, found.workspace, action.paneId);
+      if (found) focus(state, found.group, found.workspace, action.paneId);
       break;
     }
     case 'resizeSplit': {
@@ -272,7 +336,7 @@ export function applyAction(state: AppState, action: Action, home: string): Effe
         tabs.splice(tabs.indexOf(p.activeTab) + 1, 0, terminal.id);
         return { ...p, tabs, activeTab: terminal.id };
       });
-      focus(state, found.workspace, action.paneId);
+      focus(state, found.group, found.workspace, action.paneId);
       break;
     }
     case 'closeTab': {
@@ -283,7 +347,7 @@ export function applyAction(state: AppState, action: Action, home: string): Effe
       const found = findTerminal(state, action.terminalId);
       if (!found) break;
       found.workspace.root = updatePane(found.workspace.root, found.pane.id, (p) => ({ ...p, activeTab: action.terminalId }));
-      focus(state, found.workspace, found.pane.id);
+      focus(state, found.group, found.workspace, found.pane.id);
       break;
     }
     case 'renameTab': {
@@ -315,11 +379,12 @@ export function applyAction(state: AppState, action: Action, home: string): Effe
         tabs.splice(Math.max(0, Math.min(action.toIndex, tabs.length)), 0, action.terminalId);
         return { ...p, tabs, activeTab: action.terminalId };
       });
-      focus(state, again.workspace, action.paneId);
+      focus(state, again.group, again.workspace, action.paneId);
       break;
     }
     case 'setUi': {
-      state.ui = { ...state.ui, ...action.ui };
+      const window = windowById(action.windowId);
+      if (window) window.ui = { ...window.ui, ...action.ui };
       break;
     }
     case 'runPending':

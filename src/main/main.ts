@@ -1,6 +1,9 @@
-// Electron main process: one window that renders the daemon's state.
-// Closing the window leaves the daemon and all pane processes running.
+// Electron main process: windows that render the daemon's state, one per
+// window in the state. Closing the last window leaves the daemon and all
+// terminal processes running; closing another one moves its groups to the
+// window used before it.
 
+import crypto from 'node:crypto';
 import path from 'node:path';
 import fs from 'node:fs';
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, screen, shell, type MenuItemConstructorOptions } from 'electron';
@@ -8,7 +11,8 @@ import type { ClientMessage, DaemonMessage } from '../shared/protocol';
 import { BUILD_ID } from '../shared/build';
 import { paths } from '../shared/paths';
 import { loadSettings, resolveFont, resolveTheme, saveSettings, type Settings } from '../shared/settings';
-import type { AppState, UiState } from '../shared/types';
+import type { AppState, UiState, WindowState } from '../shared/types';
+import { terminalIds } from '../shared/layout';
 import { DaemonClient, DaemonReplaceDeclined } from './daemon-client';
 import { daemonLauncher } from './daemon-runtime';
 import { diagnose, diagnoseError, systemInfo, watchEventLoop } from '../shared/diagnostics';
@@ -32,29 +36,58 @@ const daemon = new DaemonClient(
     return response === 0;
   },
 );
-let win: BrowserWindow | null = null;
-let lastUi: UiState = {};
+/** Open windows by their id in the state. */
+const windows = new Map<string, BrowserWindow>();
+/** Ids of open windows, the most recently focused last. */
+let focusOrder: string[] = [];
+/** Windows asked for with the window they were asked from, opened when the state has them. */
+const requested = new Map<string, BrowserWindow | null>();
+/** The window showing each terminal, from the last state. */
+let terminalWindows = new Map<string, string>();
+/** Agents that need the user, counted by each window. */
+const badges = new Map<BrowserWindow, number>();
 let lastState: AppState | null = null;
 let resolveFirstState: () => void;
 const firstState = new Promise<void>((resolve) => (resolveFirstState = resolve));
 let quitting = false;
 const updater = new Updater(
-  (status) => win?.webContents.send('update', status),
+  (status) => {
+    for (const window of windows.values()) window.webContents.send('update', status);
+  },
   () => loadSettings().checkForUpdates,
 );
 
+/** The window focused last, which a second start of the app brings forward. */
+function lastFocused(): BrowserWindow | null {
+  return windows.get(focusOrder.at(-1) ?? '') ?? windows.values().next().value ?? null;
+}
+
+/** Sends terminal output only to the window that shows the terminal, everything else to all windows. */
 function send(msg: DaemonMessage | { type: 'connected'; outdated: boolean }): void {
-  win?.webContents.send('daemon', msg);
+  if (msg.type === 'data' || msg.type === 'snapshot' || msg.type === 'usage') {
+    const owner = windows.get(terminalWindows.get(msg.terminalId) ?? '');
+    if (owner) return owner.webContents.send('daemon', msg);
+  }
+  for (const window of windows.values()) window.webContents.send('daemon', msg);
 }
 
 function boundsVisible(b: NonNullable<UiState['bounds']>): boolean {
   return screen.getAllDisplays().some(({ workArea: a }) => b.x < a.x + a.width && b.x + b.width > a.x && b.y < a.y + a.height && b.y + b.height > a.y);
 }
 
-function createWindow(): void {
-  const saved = lastUi.bounds;
-  const bounds = saved && boundsVisible(saved) ? saved : { width: 1280, height: 800 };
-  win = new BrowserWindow({
+/** Opens the windows of the state that are not open yet. */
+function openWindows(): void {
+  for (const window of lastState?.windows ?? []) if (!windows.has(window.id)) createWindow(window);
+}
+
+/** A window asked for from `near` without saved bounds opens over it, a bit lower and to the right. */
+function createWindow(state: WindowState, near?: BrowserWindow | null): void {
+  const windowId = state.id;
+  const saved = state.ui.bounds;
+  let lastBounds = saved;
+  const nearBounds = near && !near.isDestroyed() ? near.getNormalBounds() : null;
+  const bounds = saved && boundsVisible(saved) ? saved : nearBounds ? { ...nearBounds, x: nearBounds.x + 32, y: nearBounds.y + 32 } : { width: 1280, height: 800 };
+  const win = new BrowserWindow({
     ...bounds,
     minWidth: 480,
     minHeight: 320,
@@ -70,24 +103,39 @@ function createWindow(): void {
       nodeIntegration: false,
     },
   });
+  windows.set(windowId, win);
+  focusOrder.push(windowId);
   if (saved?.maximized) win.maximize();
-  win.once('ready-to-show', () => win?.show());
-  void win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
+  win.once('ready-to-show', () => win.show());
+  void win.loadFile(path.join(__dirname, 'renderer', 'index.html'), { query: { window: windowId } });
 
   let timer: NodeJS.Timeout | null = null;
   const saveBounds = () => {
     if (timer) clearTimeout(timer);
     timer = setTimeout(() => {
-      if (!win || win.isDestroyed() || win.isMinimized()) return;
+      if (win.isDestroyed() || win.isMinimized()) return;
       const maximized = win.isMaximized() || win.isFullScreen();
-      const ui: UiState = { bounds: { ...(maximized && lastUi.bounds ? lastUi.bounds : win.getBounds()), maximized } };
-      lastUi = ui;
-      daemon.send({ type: 'action', action: { type: 'setUi', ui } });
+      const ui: UiState = { bounds: { ...(maximized && lastBounds ? lastBounds : win.getBounds()), maximized } };
+      lastBounds = ui.bounds;
+      daemon.send({ type: 'action', action: { type: 'setUi', windowId, ui } });
     }, 300);
   };
   for (const event of ['resize', 'move', 'maximize', 'unmaximize'] as const) win.on(event as 'resize', saveBounds);
+  if (!saved) saveBounds();
+  win.on('focus', () => {
+    focusOrder = [...focusOrder.filter((id) => id !== windowId), windowId];
+  });
+  win.on('close', () => {
+    // Quitting keeps every window for the next start; closing one of several hands its groups on.
+    const into = focusOrder.filter((id) => id !== windowId && windows.has(id)).at(-1);
+    if (!quitting && into) daemon.send({ type: 'action', action: { type: 'closeWindow', windowId, into } });
+  });
   win.on('closed', () => {
-    win = null;
+    if (timer) clearTimeout(timer);
+    windows.delete(windowId);
+    focusOrder = focusOrder.filter((id) => id !== windowId);
+    badges.delete(win);
+    updateBadge();
   });
   watchWindow(win);
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
@@ -131,6 +179,18 @@ function watchWindow(window: BrowserWindow): void {
 }
 
 /** The start entry of the main process: the app, the system and what draws the window. */
+/** Asks the daemon for a new window, optionally taking a group; it opens when the state has it. */
+function newWindow(from: BrowserWindow | null, groupId?: string): void {
+  const windowId = crypto.randomUUID().replace(/-/g, '').slice(0, 12);
+  requested.set(windowId, from);
+  daemon.send({ type: 'action', action: { type: 'createWindow', windowId, groupId } });
+}
+
+/** The app icon counts the agents that need the user in all windows. */
+function updateBadge(): void {
+  setBadge(lastFocused(), [...badges.values()].reduce((a, b) => a + b, 0));
+}
+
 async function diagnoseStart(): Promise<void> {
   const gpu = (await app.getGPUInfo('basic').catch(() => null)) as { gpuDevice?: { vendorId: number; deviceId: number; active?: boolean; driverVendor?: string; driverVersion?: string }[] } | null;
   const settings = loadSettings();
@@ -167,7 +227,7 @@ function buildMenu(): void {
         { role: 'quit' },
       ],
     },
-    { label: 'Window', submenu: [{ role: 'minimize' }, { role: 'zoom' }, { role: 'togglefullscreen' }] },
+    { label: 'Window', submenu: [{ label: 'New Window', click: () => newWindow(lastFocused()) }, { type: 'separator' }, { role: 'minimize' }, { role: 'zoom' }, { role: 'togglefullscreen' }] },
   ];
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
@@ -187,24 +247,32 @@ function ensureSettingsFile(): void {
 function registerIpc(): void {
   ipcMain.on('daemon', (_e, msg: ClientMessage) => daemon.send(msg));
   ipcMain.handle('settings', () => loadSettings());
-  ipcMain.handle('saveSettings', (_e, patch: Partial<Settings>) => saveSettings(patch));
+  ipcMain.handle('saveSettings', (e, patch: Partial<Settings>) => {
+    const saved = saveSettings(patch);
+    for (const window of windows.values()) if (window.webContents !== e.sender) window.webContents.send('settings', saved);
+    return saved;
+  });
   ipcMain.handle('state', () => lastState);
   ipcMain.handle('platform', () => process.platform);
   ipcMain.handle('homedir', () => app.getPath('home'));
-  ipcMain.handle('pickFolder', async (_e, defaultPath?: string) => {
+  const senderWindow = (e: Electron.IpcMainEvent | Electron.IpcMainInvokeEvent) => BrowserWindow.fromWebContents(e.sender);
+  ipcMain.handle('pickFolder', async (e, defaultPath?: string) => {
+    const win = senderWindow(e);
     if (!win) return null;
     const result = await dialog.showOpenDialog(win, { properties: ['openDirectory', 'createDirectory'], defaultPath });
     return result.canceled ? null : result.filePaths[0];
   });
   // Groups saved to a file the user picks (closed-groups.ts in the daemon reads and writes them).
   const groupFilters = [{ name: 'Senju group', extensions: ['senju'] }];
-  ipcMain.handle('saveGroupFile', async (_e, name: string) => {
+  ipcMain.handle('saveGroupFile', async (e, name: string) => {
+    const win = senderWindow(e);
     if (!win) return null;
     const safe = String(name).replace(/[\\/:*?"<>|]/g, '').trim() || 'group';
     const result = await dialog.showSaveDialog(win, { defaultPath: path.join(app.getPath('documents'), `${safe}.senju`), filters: groupFilters });
     return result.canceled || !result.filePath ? null : result.filePath;
   });
-  ipcMain.handle('openGroupFile', async () => {
+  ipcMain.handle('openGroupFile', async (e) => {
+    const win = senderWindow(e);
     if (!win) return null;
     const result = await dialog.showOpenDialog(win, { properties: ['openFile'], filters: groupFilters });
     return result.canceled ? null : result.filePaths[0];
@@ -229,6 +297,7 @@ function registerIpc(): void {
     }
   });
   ipcMain.on('stopAll', () => void stopAll());
+  ipcMain.on('newWindow', (e, groupId?: string) => newWindow(senderWindow(e), typeof groupId === 'string' ? groupId : undefined));
   ipcMain.handle('daemonOutdated', () => daemon.outdated);
   ipcMain.handle('appInfo', () => ({
     version: app.getVersion(),
@@ -242,9 +311,13 @@ function registerIpc(): void {
   ipcMain.on('restartDaemon', () => daemon.restartDaemon());
   ipcMain.on('diagnose', (_e, event: string, details: Record<string, unknown>) => diagnose('window', String(event), details));
   ipcMain.on('diagnoseError', (_e, event: string, error: { heapMB?: number }) => diagnoseError('window', String(event), error, { heapMB: error?.heapMB }));
-  ipcMain.on('notify', (_e, terminalId: string, title: string, body: string) => notify(win, String(terminalId), String(title), String(body)));
+  ipcMain.on('notify', (e, terminalId: string, title: string, body: string) => notify(senderWindow(e), String(terminalId), String(title), String(body)));
   ipcMain.on('clearNotification', (_e, terminalId: string) => clearNotification(String(terminalId)));
-  ipcMain.on('setBadge', (_e, count: number) => setBadge(win, Number(count) || 0));
+  ipcMain.on('setBadge', (e, count: number) => {
+    const win = senderWindow(e);
+    if (win) badges.set(win, Number(count) || 0);
+    updateBadge();
+  });
   ipcMain.handle('updateStatus', () => updater.current);
   ipcMain.on('updateAction', (_e, action: UpdateAction) => {
     if (action === 'check') void updater.check();
@@ -273,18 +346,25 @@ if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
   app.on('second-instance', () => {
+    const win = lastFocused();
     if (win) {
       if (win.isMinimized()) win.restore();
       win.focus();
     } else {
-      createWindow();
+      openWindows();
     }
   });
 
   daemon.on('message', (msg) => {
     if (msg.type === 'state') {
       lastState = msg.state;
-      lastUi = msg.state.ui;
+      terminalWindows = new Map(msg.state.groups.flatMap((g) => g.workspaces.flatMap((w) => terminalIds(w.root).map((id) => [id, g.windowId] as const))));
+      for (const [windowId, from] of requested) {
+        const window = msg.state.windows.find((w) => w.id === windowId);
+        if (!window) continue;
+        requested.delete(windowId);
+        createWindow(window, from);
+      }
       resolveFirstState();
     }
     send(msg);
@@ -311,14 +391,17 @@ if (!app.requestSingleInstanceLock()) {
       app.quit();
       return;
     }
-    // Wait for the first state so the window opens with its saved bounds.
+    // Wait for the first state so the windows open with their saved bounds.
     await firstState;
-    createWindow();
+    openWindows();
     updater.start();
   });
 
   app.on('activate', () => {
-    if (!win && app.isReady()) createWindow();
+    if (!windows.size && lastState) openWindows();
+  });
+  app.on('before-quit', () => {
+    quitting = true;
   });
   app.on('window-all-closed', () => {
     if (process.platform !== 'darwin' || quitting) app.quit();

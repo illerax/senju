@@ -4,7 +4,7 @@
 
 Senju is a cross-platform terminal (Electron + TypeScript + xterm.js + node-pty) for working with multiple projects and AI agents. Linux is the primary platform; macOS and Windows must keep working. The README describes the behavior users rely on — keep it in sync with changes.
 
-Model (`src/shared/types.ts`): a **group** (one per project) holds **workspaces**; a workspace is a split layout of **panes**; each pane holds **tabs**, and each tab is one **terminal** (a shell with its own process). Use these terms consistently in code and docs.
+Model (`src/shared/types.ts`): a **window** shows its **groups** and keeps its own active workspace and UI state; a **group** (one per project) holds **workspaces**; a workspace is a split layout of **panes**; each pane holds **tabs**, and each tab is one **terminal** (a shell with its own process). Use these terms consistently in code and docs.
 
 ## Language
 
@@ -56,5 +56,6 @@ Everything in this repository must be in English: code, comments, identifiers, d
 - UI design system (`src/renderer/styles.css`): every color derives from the theme's background and foreground plus the brand amber; one bar height (`--bar`), row height (`--row`) and radius scale; icons only from `src/renderer/icons.ts`; menus and dialogs are drawn by the app (`menu.ts`, `dialog.ts`, `color-picker.ts`), never native, so they follow the theme.
 - Commands and their default shortcuts live in `src/shared/commands.ts`; users override them in settings (`keybindings`). Defaults must not take keys that programs inside a terminal can receive: Ctrl+Shift combinations and Ctrl+Tab on Linux/Windows, Cmd on macOS.
 - Settings (`src/shared/settings.ts`) are saved from the settings page and keep only values that differ from the defaults. Renderer code must not import modules that touch the file system; theme helpers live in `src/shared/themes.ts`.
+- Every window gets the whole state and renders its share (`windowView`); the main process sends a terminal's output only to the window showing it. Actions that depend on a window (`createGroup`, `setUi`, reopening or importing a group) name it.
 - The renderer re-renders on every state broadcast; keep DOM elements per id and update them in place (`placeChildren`), or double clicks, focus and inline renames break.
 - The renderer is offline under a strict CSP: fonts are bundled (`@fontsource`, esbuild file loader), nothing loads from the network.

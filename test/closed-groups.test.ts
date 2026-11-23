@@ -2,12 +2,21 @@ import { describe, expect, it } from 'vitest';
 import { insertRestored, restoreGroup, snapshotGroup } from '../src/daemon/closed-groups';
 import { applyAction } from '../src/daemon/workspace';
 import { panes, terminalIds } from '../src/shared/layout';
-import { emptyState } from '../src/shared/types';
+import { emptyState, type AppState } from '../src/shared/types';
+
+const W = 'win';
+
+/** An empty state with one window. */
+function newState(): AppState {
+  return { ...emptyState(), windows: [{ id: W, activeWorkspaceId: null, ui: {} }] };
+}
+
+const active = (state: AppState, windowId = W) => state.windows.find((w) => w.id === windowId)?.activeWorkspaceId ?? null;
 
 function twoGroups() {
-  const state = emptyState();
-  applyAction(state, { type: 'createGroup', name: 'first', cwd: '/a' }, '/');
-  applyAction(state, { type: 'createGroup', name: 'second', cwd: '/b' }, '/');
+  const state = newState();
+  applyAction(state, { type: 'createGroup', windowId: W, name: 'first', cwd: '/a' }, '/');
+  applyAction(state, { type: 'createGroup', windowId: W, name: 'second', cwd: '/b' }, '/');
   const group = state.groups[1];
   applyAction(state, { type: 'splitPane', paneId: group.workspaces[0].focusedPaneId, side: 'right' }, '/');
   applyAction(state, { type: 'createWorkspace', groupId: group.id }, '/');
@@ -33,15 +42,15 @@ describe('closed groups', () => {
     const { state, group, id } = twoGroups();
     const saved = snapshotGroup(state, group.id, { [id]: 'output' }, 42)!;
     applyAction(state, { type: 'deleteGroup', groupId: group.id }, '/');
-    applyAction(state, { type: 'createGroup', name: 'third', cwd: '/c' }, '/');
+    applyAction(state, { type: 'createGroup', windowId: W, name: 'third', cwd: '/c' }, '/');
     const restored = restoreGroup(saved);
-    insertRestored(state, restored, saved.index);
+    insertRestored(state, restored, saved.index, W);
     expect(state.groups.map((g) => g.name)).toEqual(['first', 'second', 'third']);
     const back = state.groups[1];
     expect(back.id).not.toBe(group.id);
     expect(back.workspaces.map((w) => w.name)).toEqual(group.workspaces.map((w) => w.name));
     expect(panes(back.workspaces[0].root)).toHaveLength(2);
-    expect(state.activeWorkspaceId).toBe(back.workspaces[1].id);
+    expect(active(state)).toBe(back.workspaces[1].id);
     const ids = back.workspaces.flatMap((w) => terminalIds(w.root));
     expect(ids.every((i) => state.terminals[i]?.id === i && !Object.keys(saved.terminals).includes(i))).toBe(true);
     expect(state.terminals[ids[0]].job?.sessionId).toBe('s1');

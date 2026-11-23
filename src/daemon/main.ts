@@ -19,7 +19,7 @@ import { findSessionFile, listSessions, loadRecipes, programOf, matchRecipe, req
 import { planRestore } from './restore';
 import { envDiff } from './shellquote';
 import { deleteScrollback, loadState, pruneScrollback, readScrollback, saveState, saveStateAsync, writeScrollback, writeScrollbackSync } from './store';
-import { applyAction, closeTerminal, findTerminal, type Effects } from './workspace';
+import { applyAction, closeTerminal, findTerminal, repairWindows, type Effects } from './workspace';
 import { UsageTracker } from './usage';
 import { agentProfile } from './agent-profile';
 import { addTokens, type AgentProfile, type AgentSessionFile, type AgentUsage, type UsageDetails } from '../shared/usage';
@@ -352,6 +352,7 @@ class Daemon {
 
   /** Drops terminals that no tab refers to and fills in terminals a tab refers to but lacks. */
   private repairState(): void {
+    repairWindows(this.state);
     const used = new Set<string>();
     for (const group of this.state.groups) {
       for (const workspace of group.workspaces) {
@@ -472,14 +473,14 @@ class Daemon {
   }
 
   /** Opens a saved group as a new group at its old place; its terminals start as after a reboot. */
-  private async openGroup(file: string): Promise<void> {
+  private async openGroup(file: string, windowId: string): Promise<void> {
     const saved = await readSavedGroup(file);
     const restored = restoreGroup(saved);
     await Promise.all(Object.entries(restored.scrollback).map(([id, data]) => writeScrollback(paths.stateFile, id, data)));
     const jobCwds = Object.values(restored.terminals).flatMap((t) => (t.job ? [t.job.cwd] : []));
     const present = await requiredFiles(this.recipes, jobCwds);
     if (this.shuttingDown) return;
-    insertRestored(this.state, restored, saved.index);
+    insertRestored(this.state, restored, saved.index, windowId);
     for (const id of Object.keys(restored.terminals)) this.spawn(id, true, present);
     log(`group ${restored.group.id} opened from ${file}`);
     this.changed();
@@ -494,9 +495,9 @@ class Daemon {
         case 'exportGroup':
           return await this.saveGroup(action.groupId, action.file);
         case 'importGroup':
-          return await this.openGroup(action.file);
+          return await this.openGroup(action.file, action.windowId);
         case 'reopenGroup':
-          await this.openGroup(closedFile(action.closedId));
+          await this.openGroup(closedFile(action.closedId), action.windowId);
           await fs.promises.rm(closedFile(action.closedId), { force: true });
           break;
         case 'forgetClosedGroup':
@@ -865,7 +866,9 @@ class Daemon {
         break;
       case 'attach': {
         const session = this.sessions.get(msg.terminalId);
-        if (!session || client.detach.has(msg.terminalId)) return;
+        if (!session) return;
+        // Another window shows the terminal now: it starts from a fresh snapshot.
+        client.detach.get(msg.terminalId)?.();
         const detach = session.attach(
           (data) => client.send({ type: 'snapshot', terminalId: msg.terminalId, data }),
           (data) => client.sendData(msg.terminalId, data),

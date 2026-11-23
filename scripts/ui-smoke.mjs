@@ -30,7 +30,7 @@ const report = (label, ok) => {
 function daemonSend(msg) {
   return new Promise((resolve, reject) => {
     const s = net.connect(path.join(home, 'daemon.sock'), () => {
-      s.write(`${JSON.stringify({ type: 'hello', protocol: 2 })}\n${JSON.stringify(msg)}\n`);
+      s.write(`${JSON.stringify({ type: 'hello', protocol: 3 })}\n${JSON.stringify(msg)}\n`);
       setTimeout(() => {
         s.end();
         resolve();
@@ -84,7 +84,7 @@ await shot('2-splits.png');
 
 const state = () => page.evaluate(() => window.senju.state());
 const panesOf = (node) => (node.type === 'pane' ? [node] : node.children.flatMap(panesOf));
-const active = (st) => st.groups.flatMap((g) => g.workspaces).find((w) => w.id === st.activeWorkspaceId);
+const active = (st) => st.groups.flatMap((g) => g.workspaces).find((w) => w.id === st.windows[0].activeWorkspaceId);
 
 
 let st = await state();
@@ -181,7 +181,7 @@ report('Ctrl+click opens a hyperlink without asking', dialogs === 0 && (await ap
 
 // Workspace shortcuts go across groups.
 st = await state();
-const moving = st.activeWorkspaceId;
+const moving = st.windows[0].activeWorkspaceId;
 const senjuGroup = st.groups[0].id;
 const where = (s) => {
   const g = s.groups.find((x) => x.workspaces.some((w) => w.id === moving));
@@ -190,10 +190,10 @@ const where = (s) => {
 await page.keyboard.press('Control+Shift+PageUp');
 await sleep(300);
 st = await state();
-report('previous workspace crosses into the previous group', st.activeWorkspaceId === st.groups[0].workspaces[0].id);
+report('previous workspace crosses into the previous group', st.windows[0].activeWorkspaceId === st.groups[0].workspaces[0].id);
 await page.keyboard.press('Control+Shift+PageDown');
 await sleep(300);
-report('next workspace comes back', (await state()).activeWorkspaceId === moving);
+report('next workspace comes back', (await state()).windows[0].activeWorkspaceId === moving);
 const moves = [];
 for (const key of ['PageDown', 'PageDown', 'PageUp', 'PageUp', 'PageDown']) {
   await page.keyboard.press(`Control+Alt+Shift+${key}`);
@@ -201,7 +201,7 @@ for (const key of ['PageDown', 'PageDown', 'PageUp', 'PageUp', 'PageDown']) {
   moves.push(where(await state()));
 }
 report(`workspace moves down, stops at the end, moves up into the previous group and back (${moves.join(' ')})`, moves.join(' ') === 'scratch:1 scratch:1 scratch:0 senju:1 scratch:0');
-report('the moved workspace stays active', (await state()).activeWorkspaceId === moving);
+report('the moved workspace stays active', (await state()).windows[0].activeWorkspaceId === moving);
 
 // Notifications have their own settings page: off as a whole, or per reason.
 await page.click('#open-settings');
@@ -232,7 +232,27 @@ report(`about shows diagnostics.log (${shown.map((f) => path.basename(f)).join('
 await page.keyboard.press('Escape');
 await sleep(300);
 
-// Closing the UI keeps the daemon; a new UI gets everything back.
+// A group moved to a new window shows there and leaves the first window.
+const groupNames = (p) => p.locator('.group-name').allInnerTexts();
+const movedGroup = (await state()).groups.find((g) => g.name === 'senju');
+const opened = app.waitForEvent('window');
+await page.evaluate((id) => window.senju.newWindow(id), movedGroup.id);
+let page2 = await opened;
+await page2.waitForSelector('.pane .xterm');
+await sleep(1000);
+st = await state();
+report('a new window takes the group', st.windows.length === 2 && st.groups.find((g) => g.id === movedGroup.id).windowId === st.windows[1].id);
+report('each window lists its own groups', (await groupNames(page)).join() === 'scratch' && (await groupNames(page2)).join() === 'senju');
+await page2.locator('.pane.focused .xterm').click();
+await page2.keyboard.type('echo from-the-second-window\n');
+await sleep(800);
+report('the second window runs its terminal', (await page2.locator('#workspace').innerText()).includes('from-the-second-window'));
+report('the first window keeps its workspace', (await page.locator('#workspace').innerText()).includes('git log'));
+try {
+  await page2.screenshot({ path: path.join(out, '2e-second-window.png') });
+} catch {}
+
+// Closing the UI keeps the daemon; a new UI gets everything back, every window.
 await quit(app);
 await sleep(500);
 app = await launch();
@@ -242,6 +262,21 @@ await sleep(1500);
 await shot('3-reopened.png');
 const text = await page.locator('#workspace').innerText();
 report('screen kept after reopen', text.includes('sleep 600') && text.includes('git log'));
+for (let until = Date.now() + 5000; app.windows().length < 2 && Date.now() < until; ) await sleep(100);
+page2 = app.windows().find((w) => w !== page);
+report('both windows reopen', app.windows().length === 2 && !!page2);
+if (page2) {
+  await page2.waitForSelector('.pane .xterm');
+  await sleep(800);
+  report('the second window reopens with its group', (await groupNames(page2)).join() === 'senju' && (await page2.locator('#workspace').innerText()).includes('from-the-second-window'));
+}
+
+// Closing a window that is not the last moves its groups to the other one.
+const secondId = (await state()).windows[1].id;
+await app.evaluate(({ BrowserWindow }, id) => BrowserWindow.getAllWindows().find((w) => w.webContents.getURL().includes(`window=${id}`))?.close(), secondId);
+await sleep(1000);
+st = await state();
+report('closing a window hands its groups on', st.windows.length === 1 && app.windows().length === 1 && (await groupNames(page)).join() === 'scratch,senju');
 
 // Stop everything, as a reboot would, and start again.
 await stopAll(app, page);

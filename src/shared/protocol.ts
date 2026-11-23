@@ -5,25 +5,32 @@ import type { AppState, UiState } from './types';
 import type { UsageDetails } from './usage';
 
 /** Bump when messages change incompatibly; a UI replaces a daemon with another version. */
-export const PROTOCOL_VERSION = 2;
+export const PROTOCOL_VERSION = 3;
 
 export type SplitSide = 'left' | 'right' | 'up' | 'down';
 
 export type Action =
-  | { type: 'createGroup'; name: string; cwd: string }
+  | { type: 'createGroup'; name: string; cwd: string; windowId: string }
   | { type: 'renameGroup'; groupId: string; name: string }
   /** Sets the directory new workspaces of the group start in. */
   | { type: 'setGroupCwd'; groupId: string; cwd: string }
   | { type: 'deleteGroup'; groupId: string }
   /** Saves the group with its terminals to disk, then closes it; reopenGroup brings it back. */
   | { type: 'closeGroup'; groupId: string }
-  | { type: 'reopenGroup'; closedId: string }
+  | { type: 'reopenGroup'; closedId: string; windowId: string }
   | { type: 'forgetClosedGroup'; closedId: string }
   /** Saves the group to a file the user chose, keeping it open. */
   | { type: 'exportGroup'; groupId: string; file: string }
   /** Opens a group saved to a file, as a new group. */
-  | { type: 'importGroup'; file: string }
+  | { type: 'importGroup'; file: string; windowId: string }
+  /** Moves a group to a position among the groups of all windows. */
   | { type: 'moveGroup'; groupId: string; toIndex: number }
+  /** Moves a group to the end of another window's sidebar and shows it there. */
+  | { type: 'moveGroupToWindow'; groupId: string; windowId: string }
+  /** Adds a window, optionally taking a group from another window. */
+  | { type: 'createWindow'; windowId: string; groupId?: string }
+  /** Removes a window; its groups move to the end of the window `into`. The last window is kept. */
+  | { type: 'closeWindow'; windowId: string; into: string }
   | { type: 'setGroupCollapsed'; groupId: string; collapsed: boolean }
   | { type: 'createWorkspace'; groupId: string }
   | { type: 'renameWorkspace'; workspaceId: string; name: string }
@@ -45,7 +52,7 @@ export type Action =
   | { type: 'moveTab'; terminalId: string; paneId: string; toIndex: number }
   | { type: 'runPending'; terminalId: string }
   | { type: 'dismissPending'; terminalId: string }
-  | { type: 'setUi'; ui: UiState };
+  | { type: 'setUi'; windowId: string; ui: UiState };
 
 export type ClientMessage =
   | { type: 'hello'; protocol: number }
