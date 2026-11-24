@@ -2,7 +2,7 @@
 // overridden by the user's settings. Shortcuts are accelerators like
 // "Ctrl+Shift+T", resolved by physical key so keyboard layouts do not matter.
 
-import { commandIds, defaultBindings, type Command } from '../shared/commands';
+import { commandIds, commandScope, defaultBindings, type Command, type CommandScope } from '../shared/commands';
 import type { Settings } from '../shared/settings';
 
 export type { Command } from '../shared/commands';
@@ -104,8 +104,15 @@ export function isRiskyAccelerator(accelerator: string): boolean {
   return !chord.ctrl && !chord.meta && !(chord.shift && chord.code === 'Insert');
 }
 
+/** How a copy mode key reads in hints: "v" for V, "V" for Shift+V. */
+export function keyLabel(accelerator: string): string {
+  if (/^[A-Z]$/.test(accelerator)) return accelerator.toLowerCase();
+  const shifted = /^Shift\+([A-Z])$/.exec(accelerator);
+  return shifted ? shifted[1] : accelerator;
+}
+
 export class Keymap {
-  private readonly bindings: { command: Command; chord: Chord; accelerator: string }[] = [];
+  private readonly bindings: { command: Command; scope: CommandScope; chord: Chord; accelerator: string }[] = [];
   private readonly byCommand = new Map<Command, string[]>();
 
   constructor(
@@ -120,15 +127,16 @@ export class Keymap {
         const normalized = normalizeAccelerator(accelerator);
         if (!chord || !normalized) continue;
         valid.push(normalized);
-        this.bindings.push({ command, chord, accelerator: normalized });
+        this.bindings.push({ command, scope: commandScope(command), chord, accelerator: normalized });
       }
       this.byCommand.set(command, valid);
     }
   }
 
-  match(e: KeyboardEvent): Command | null {
+  /** The command of a key event; copy mode keys only match in their own scope. */
+  match(e: KeyboardEvent, scope: CommandScope = 'app'): Command | null {
     const hit = this.bindings.find(
-      ({ chord }) => chord.code === e.code && chord.ctrl === e.ctrlKey && chord.shift === e.shiftKey && chord.alt === e.altKey && chord.meta === e.metaKey,
+      (b) => b.scope === scope && b.chord.code === e.code && b.chord.ctrl === e.ctrlKey && b.chord.shift === e.shiftKey && b.chord.alt === e.altKey && b.chord.meta === e.metaKey,
     );
     return hit?.command ?? null;
   }
@@ -143,9 +151,9 @@ export class Keymap {
     return this.shortcuts(command)[0];
   }
 
-  /** Commands that use the shortcut. */
-  commandsFor(accelerator: string): Command[] {
+  /** Commands of a scope that use the shortcut. */
+  commandsFor(accelerator: string, scope: CommandScope = 'app'): Command[] {
     const normalized = normalizeAccelerator(accelerator);
-    return this.bindings.filter((b) => b.accelerator === normalized).map((b) => b.command);
+    return this.bindings.filter((b) => b.scope === scope && b.accelerator === normalized).map((b) => b.command);
   }
 }

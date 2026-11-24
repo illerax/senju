@@ -874,6 +874,90 @@ body.resizing-column * {
   border-color: var(--accent);
 }
 
+/* Copy mode: a cursor over the cells and a bar listing its keys, at the bottom
+   of the terminal, or at the top while the cursor is under it. */
+.copy-mode-cursor {
+  position: absolute;
+  z-index: 2;
+  pointer-events: none;
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+  background: color-mix(in srgb, var(--accent) 35%, transparent);
+}
+
+/* The program's cursor would read as a second one. */
+.terminal.copy-mode .xterm-rows .xterm-cursor {
+  background-color: transparent !important;
+  color: inherit !important;
+  outline: none !important;
+  box-shadow: none !important;
+  animation: none !important;
+}
+
+.copy-mode-cursor[hidden] {
+  display: none;
+}
+
+.copy-mode-bar {
+  position: absolute;
+  left: 6px;
+  right: 18px;
+  bottom: 6px;
+  z-index: 3;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  padding: 5px 10px;
+  font-size: 12px;
+  color: var(--muted);
+  background: var(--elevated);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+  pointer-events: none;
+}
+
+.copy-mode-bar.top {
+  top: 6px;
+  bottom: auto;
+}
+
+.copy-mode-bar[hidden] {
+  display: none;
+}
+
+.copy-mode-title {
+  font-weight: 600;
+  color: var(--accent-text);
+}
+
+.copy-mode-bar.copied .copy-mode-title {
+  color: var(--done);
+}
+
+.copy-mode-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  white-space: nowrap;
+}
+
+.copy-mode-hint kbd {
+  min-width: 16px;
+  padding: 0 4px;
+  font: 500 11px var(--mono);
+  text-align: center;
+  color: var(--fg);
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+}
+
+.copy-mode-hint kbd:last-of-type {
+  margin-right: 2px;
+}
+
 .terminal-overlay {
   display: none;
   align-items: center;
@@ -1430,6 +1514,21 @@ body.resizing-column * {
   background: var(--selected);
   color: var(--fg);
   font-weight: 500;
+}
+
+.settings-subnav {
+  display: flex;
+  flex-direction: column;
+}
+
+.settings-subnav[hidden] {
+  display: none;
+}
+
+.settings-nav-item.sub {
+  height: 24px;
+  padding-left: 22px;
+  font-size: 12.5px;
 }
 
 .settings-nav-item.subtle {

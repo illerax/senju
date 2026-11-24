@@ -4,9 +4,15 @@
 // Defaults on Linux and Windows use Ctrl+Shift (or Ctrl+Tab), which programs
 // in a terminal cannot receive as distinct keys, so nothing a program relies
 // on is taken away. macOS uses Cmd.
+//
+// Copy mode keys apply only while a terminal is in copy mode, where nothing
+// reaches the program, so they are plain keys.
 
-export const commandCategories = ['Groups', 'Workspaces', 'Panes', 'Tabs', 'Clipboard', 'Window'] as const;
+export const commandCategories = ['Groups', 'Workspaces', 'Panes', 'Tabs', 'Clipboard', 'Window', 'Copy mode'] as const;
 export type CommandCategory = (typeof commandCategories)[number];
+
+/** Where a shortcut works: everywhere in the window, or in a terminal in copy mode. */
+export type CommandScope = 'app' | 'copyMode';
 
 interface CommandInfo {
   label: string;
@@ -14,6 +20,9 @@ interface CommandInfo {
   linux: string[];
   mac: string[];
 }
+
+/** A copy mode key, the same on every platform. */
+const copyKey = (label: string, ...keys: string[]): CommandInfo => ({ label, category: 'Copy mode', linux: keys, mac: keys });
 
 const tabCommands = Object.fromEntries(
   Array.from({ length: 9 }, (_, i) => [
@@ -57,6 +66,7 @@ export const commands = {
 
   copy: { label: 'Copy', category: 'Clipboard', linux: ['Ctrl+Shift+C'], mac: ['Cmd+C'] },
   paste: { label: 'Paste', category: 'Clipboard', linux: ['Ctrl+Shift+V', 'Shift+Insert'], mac: ['Cmd+V'] },
+  copyMode: { label: 'Copy mode: select and copy text with the keyboard', category: 'Clipboard', linux: ['Ctrl+Shift+Space'], mac: ['Cmd+Shift+Space'] },
 
   newWindow: { label: 'New window', category: 'Window', linux: ['Ctrl+Shift+O'], mac: ['Cmd+Shift+O'] },
   toggleSidebar: { label: 'Show or hide the sidebar', category: 'Window', linux: ['Ctrl+Shift+B'], mac: ['Cmd+B'] },
@@ -68,11 +78,35 @@ export const commands = {
   zoomInAll: { label: 'Zoom in all terminals', category: 'Window', linux: ['Ctrl+Alt+Shift+='], mac: ['Cmd+Alt+='] },
   zoomOutAll: { label: 'Zoom out all terminals', category: 'Window', linux: ['Ctrl+Alt+Shift+-'], mac: ['Cmd+Alt+-'] },
   resetZoomAll: { label: 'Reset the zoom of all terminals', category: 'Window', linux: ['Ctrl+Alt+Shift+0'], mac: ['Cmd+Alt+0'] },
+
+  copyModeLeft: copyKey('Move left', 'H', 'Left'),
+  copyModeDown: copyKey('Move down', 'J', 'Down'),
+  copyModeUp: copyKey('Move up', 'K', 'Up'),
+  copyModeRight: copyKey('Move right', 'L', 'Right'),
+  copyModeWordForward: copyKey('Next word', 'W'),
+  copyModeWordBack: copyKey('Previous word', 'B'),
+  copyModeLineStart: copyKey('Start of the line', '0', 'Home'),
+  copyModeLineEnd: copyKey('End of the line', 'Shift+4', 'End'),
+  copyModePageUp: copyKey('Page up', 'PageUp', 'Ctrl+B'),
+  copyModePageDown: copyKey('Page down', 'PageDown', 'Ctrl+F'),
+  copyModeTop: copyKey('Top of the scrollback', 'G', 'Ctrl+Home'),
+  copyModeBottom: copyKey('Bottom', 'Shift+G', 'Ctrl+End'),
+  copyModeSelect: copyKey('Start or stop selecting', 'V', 'Space'),
+  copyModeSelectLines: copyKey('Select whole lines', 'Shift+V'),
+  copyModeFind: copyKey('Find', '/'),
+  copyModeFindNext: copyKey('Next match', 'N'),
+  copyModeFindPrevious: copyKey('Previous match', 'Shift+N'),
+  copyModeCopy: copyKey('Copy the selection, or the line without one, and exit', 'Y', 'Enter'),
+  copyModeExit: copyKey('Exit copy mode', 'Escape', 'Q'),
 } satisfies Record<string, CommandInfo>;
 
 export type Command = keyof typeof commands;
 
 export const commandIds = Object.keys(commands) as Command[];
+
+export function commandScope(command: Command): CommandScope {
+  return commands[command].category === 'Copy mode' ? 'copyMode' : 'app';
+}
 
 export function defaultBindings(command: Command, platform: string): string[] {
   const info: CommandInfo = commands[command];

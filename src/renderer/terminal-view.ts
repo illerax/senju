@@ -7,6 +7,8 @@ import { WebLinksAddon } from '@xterm/addon-web-links';
 import type { Settings } from '../shared/settings';
 import { resolveTheme, terminalFont } from '../shared/themes';
 import { senju } from './api';
+import { CopyMode } from './copy-mode';
+import type { Keymap } from './keymap';
 import { TerminalSearch } from './terminal-search';
 import { countOutput, note, outputTimer, snapshotTimer, terminalName } from './perf-monitor';
 
@@ -17,6 +19,8 @@ export interface TerminalHooks {
   onContextMenu: (terminalId: string, e: MouseEvent) => void;
   /** Zooms this terminal by a number of steps; negative zooms out. */
   onZoom: (terminalId: string, steps: number) => void;
+  /** The shortcuts, for the keys of copy mode. */
+  keymap: () => Keymap;
 }
 
 /** Wheel distance, in pixels, of one zoom step. */
@@ -41,6 +45,7 @@ export class TerminalView {
   private zoom = 0;
   private lastSize = '';
   private readonly search: TerminalSearch;
+  private readonly copyMode: CopyMode;
 
   constructor(
     readonly terminalId: string,
@@ -85,16 +90,39 @@ export class TerminalView {
     this.term.unicode.activeVersion = '11';
     this.term.loadAddon(new WebLinksAddon(open));
     this.term.open(this.host);
-    this.search = new TerminalSearch(this.term, () => resolveTheme(this.settings), () => this.focus());
-    this.element.append(this.search.element);
+    this.search = new TerminalSearch(
+      this.term,
+      () => resolveTheme(this.settings),
+      () => {
+        this.copyMode.afterFind();
+        this.focus();
+      },
+    );
+    this.copyMode = new CopyMode(this.term, {
+      keymap: hooks.keymap,
+      find: () => this.search.open(),
+      findAgain: (previous) => this.search.findAgain(previous),
+      copy: (text) => {
+        senju.clipboardWrite(text);
+        if (platform === 'linux') senju.clipboardWrite(text, 'selection');
+      },
+      onToggle: (active) => this.element.classList.toggle('copy-mode', active),
+    });
+    this.element.append(this.search.element, this.copyMode.bar);
 
-    this.term.attachCustomKeyEventHandler((e) => e.type !== 'keydown' || !hooks.onKey(e));
-    this.term.onData((data) => this.synced && senju.send({ type: 'input', terminalId, data }));
+    this.term.attachCustomKeyEventHandler((e) => {
+      if (!this.copyMode.isActive) return e.type !== 'keydown' || !hooks.onKey(e);
+      // In copy mode no key reaches the program: its own keys first, then the app's shortcuts.
+      if (e.type === 'keydown' && !this.copyMode.handleKey(e)) hooks.onKey(e);
+      e.preventDefault();
+      return false;
+    });
+    this.term.onData((data) => this.synced && !this.copyMode.isActive && senju.send({ type: 'input', terminalId, data }));
     this.term.textarea?.addEventListener('focus', () => hooks.onFocus(terminalId));
     this.term.onSelectionChange(() => {
       const text = this.term.getSelection();
-      // Stepping through search matches selects them; that is not a copy.
-      if (!text || this.search.isOpen) return;
+      // Stepping through search matches selects them, and so does copy mode until it copies; that is not a copy.
+      if (!text || this.search.isOpen || this.copyMode.isActive) return;
       if (platform === 'linux') senju.clipboardWrite(text, 'selection');
       if (this.copyOnSelect) senju.clipboardWrite(text);
     });
@@ -146,6 +174,7 @@ export class TerminalView {
   }
 
   onSnapshot(data: string): void {
+    this.copyMode.exit();
     this.term.reset();
     this.term.write(data, snapshotTimer(this.terminalId, data.length));
     this.synced = true;
@@ -174,6 +203,7 @@ export class TerminalView {
     this.term.options.theme = resolveTheme(settings);
     this.applyFont();
     this.search.refresh();
+    this.copyMode.refresh();
   }
 
   /** Sets this terminal's own zoom, on top of the zoom of all terminals. */
@@ -200,6 +230,13 @@ export class TerminalView {
   /** Opens the find bar over the terminal. */
   find(): void {
     this.search.open();
+  }
+
+  /** Turns copy mode on, or off when it is on. */
+  toggleCopyMode(): void {
+    if (this.copyMode.isActive) this.copyMode.exit();
+    else this.copyMode.enter();
+    this.focus();
   }
 
   async copy(): Promise<void> {

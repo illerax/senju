@@ -2,10 +2,10 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { commandIds, defaultBindings } from '../src/shared/commands';
+import { commandIds, commandScope, defaultBindings } from '../src/shared/commands';
 import { defaultSettings, loadSettings, resolveTheme, saveSettings } from '../src/shared/settings';
 import { builtinThemes } from '../src/shared/themes';
-import { isRiskyAccelerator, Keymap, normalizeAccelerator, parseAccelerator } from '../src/renderer/keymap';
+import { isRiskyAccelerator, keyLabel, Keymap, normalizeAccelerator, parseAccelerator } from '../src/renderer/keymap';
 
 const key = (code: string, mods: Partial<Record<'ctrlKey' | 'shiftKey' | 'altKey' | 'metaKey', boolean>> = {}) =>
   ({ code, ctrlKey: false, shiftKey: false, altKey: false, metaKey: false, ...mods }) as KeyboardEvent;
@@ -28,18 +28,34 @@ describe('accelerators', () => {
     expect(isRiskyAccelerator('F5')).toBe(false);
   });
 
-  it('every default shortcut is valid and used once per platform', () => {
+  it('every default shortcut is valid and used once per platform and scope', () => {
     for (const platform of ['linux', 'darwin']) {
       const seen = new Map<string, string>();
       for (const command of commandIds) {
         for (const accelerator of defaultBindings(command, platform)) {
           const normalized = normalizeAccelerator(accelerator);
           expect(normalized, `${platform} ${command} ${accelerator}`).not.toBeNull();
-          expect(seen.get(normalized!), `${platform} ${accelerator}`).toBeUndefined();
-          seen.set(normalized!, command);
+          const key = `${commandScope(command)} ${normalized}`;
+          expect(seen.get(key), `${platform} ${accelerator}`).toBeUndefined();
+          seen.set(key, command);
         }
       }
     }
+  });
+
+  it('application shortcuts never take plain keys from programs', () => {
+    for (const platform of ['linux', 'darwin']) {
+      for (const command of commandIds.filter((c) => commandScope(c) === 'app')) {
+        for (const accelerator of defaultBindings(command, platform)) expect(isRiskyAccelerator(accelerator), `${platform} ${command}`).toBe(false);
+      }
+    }
+  });
+
+  it('shows copy mode keys as typed', () => {
+    expect(keyLabel('V')).toBe('v');
+    expect(keyLabel('Shift+V')).toBe('V');
+    expect(keyLabel('Shift+4')).toBe('Shift+4');
+    expect(keyLabel('PageUp')).toBe('PageUp');
   });
 });
 
@@ -51,6 +67,17 @@ describe('Keymap', () => {
     expect(keymap.match(key('KeyX', { ctrlKey: true, shiftKey: true }))).toBeNull();
     expect(keymap.match(key('KeyD', { ctrlKey: true, shiftKey: true }))).toBe('splitRight');
     expect(keymap.commandsFor('ctrl+shift+d')).toEqual(['splitRight']);
+  });
+
+  it('matches copy mode keys only in copy mode', () => {
+    const keymap = new Keymap('linux', { copyModeCopy: ['C'] });
+    expect(keymap.match(key('KeyJ'))).toBeNull();
+    expect(keymap.match(key('KeyJ'), 'copyMode')).toBe('copyModeDown');
+    expect(keymap.match(key('KeyC'), 'copyMode')).toBe('copyModeCopy');
+    expect(keymap.match(key('KeyY'), 'copyMode')).toBeNull();
+    expect(keymap.match(key('Space', { ctrlKey: true, shiftKey: true }))).toBe('copyMode');
+    expect(keymap.commandsFor('J')).toEqual([]);
+    expect(keymap.commandsFor('J', 'copyMode')).toEqual(['copyModeDown']);
   });
 });
 

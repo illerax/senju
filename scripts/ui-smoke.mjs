@@ -179,6 +179,36 @@ await page.keyboard.up('Control');
 await sleep(300);
 report('Ctrl+click opens a hyperlink without asking', dialogs === 0 && (await app.evaluate(() => globalThis.opened)).includes('https://example.com/osc8'));
 
+// Copy mode selects and copies with the keyboard alone; no key reaches the shell.
+await page.keyboard.type(`clear; printf 'copy-one two\\ncopy-three four\\n'\n`);
+await page.waitForFunction(() => [...document.querySelectorAll('.pane.focused .xterm-rows > div')].some((r) => r.textContent.startsWith('copy-three')), null, { timeout: 10000 });
+const clipboard = () => app.evaluate(({ clipboard }) => clipboard.readText());
+const keys = async (...list) => {
+  for (const k of list) await page.keyboard.press(k);
+  await sleep(200);
+};
+const promptLine = () => page.evaluate(() => [...document.querySelectorAll('.pane.focused .xterm-rows > div')].map((r) => r.textContent).find((t) => t.includes('$')) ?? '');
+const promptBefore = await promptLine();
+await keys('Control+Shift+Space');
+report('copy mode shows its keys', await page.locator('.pane.focused .copy-mode-bar:not([hidden])').filter({ hasText: 'Copy mode' }).isVisible());
+await keys('k', 'k', '0', 'v', 'Shift+Digit4');
+report('copy mode shows that it is selecting', await page.locator('.pane.focused .copy-mode-bar').filter({ hasText: 'Selecting' }).isVisible());
+await shot('2f-copy-mode.png');
+await keys('y');
+report(`copy mode copies a selection (${JSON.stringify(await clipboard())})`, (await clipboard()) === 'copy-one two');
+report('copy mode says it copied', await page.locator('.pane.focused .copy-mode-bar').filter({ hasText: 'Copied' }).isVisible());
+await keys('Control+Shift+Space', 'k', 'k', 'Shift+V', 'j', 'Enter');
+report(`copy mode copies whole lines (${JSON.stringify(await clipboard())})`, (await clipboard()) === 'copy-one two\ncopy-three four');
+await keys('Control+Shift+Space', '/');
+await page.keyboard.type('three');
+await keys('Enter', 'Escape', 'v', 'End', 'y');
+report(`copy mode starts a selection at a match (${JSON.stringify(await clipboard())})`, (await clipboard()) === 'three four');
+await keys('Control+Shift+Space', 'k', 'y');
+report(`copy mode copies the cursor's line without a selection (${JSON.stringify(await clipboard())})`, (await clipboard()) === 'copy-three four');
+report(`copy mode keys never reach the shell (${JSON.stringify(await promptLine())})`, (await promptLine()) === promptBefore);
+await keys('Control+Shift+Space', 'Escape');
+report('copy mode exits', await page.locator('.pane.focused .copy-mode-bar').isHidden());
+
 // Workspace shortcuts go across groups.
 st = await state();
 const moving = st.windows[0].activeWorkspaceId;
@@ -215,6 +245,14 @@ await page.locator('label.checkbox', { hasText: 'Notify me when' }).locator('inp
 await sleep(300);
 await shot('2c-notifications.png');
 report('notifications turned off disable the reasons', savedSettings().notifications === false && (await reason.isDisabled()));
+
+// Shortcuts have a page per group, copy mode keys among them.
+await page.locator('.settings-nav-item', { hasText: 'Keyboard Shortcuts' }).click();
+await page.locator('.settings-nav-item.sub', { hasText: 'Copy mode' }).click();
+await sleep(200);
+const copyRows = await page.locator('.shortcut-row').count();
+report(`shortcut groups have their own pages (${copyRows} copy mode keys)`, copyRows > 10 && (await page.locator('.settings-page h2').textContent()) === 'Keyboard Shortcuts: Copy mode');
+await shot('2g-copy-mode-keys.png');
 
 // About: the diagnostics log can be found from the settings, to send it with a report.
 await page.locator('.settings-nav-item', { hasText: 'About' }).click();
