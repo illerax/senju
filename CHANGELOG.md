@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.2.0](https://github.com/illerax/senju/compare/v0.1.12...v0.2.0) (2026-11-24)
+
+
+### Features
+
+* copy mode, to select and copy text with the keyboard ([#48](https://github.com/illerax/senju/issues/48)) ([8f94a49](https://github.com/illerax/senju/commit/8f94a49aee6851487892aac23e36ead1bb0a7e3a))
+* several windows, each with its own groups ([#46](https://github.com/illerax/senju/issues/46)) ([4f10dec](https://github.com/illerax/senju/commit/4f10dec90c7046d83350e9aa765c83dc6d0f6de3))
+* viewers for what agents make, with the senju command and an MCP server ([#49](https://github.com/illerax/senju/issues/49)) ([2e37085](https://github.com/illerax/senju/commit/2e37085b2281dc356685102f0d4f7beec113ee39))
+
 ## [0.1.12](https://github.com/illerax/senju/compare/v0.1.11...v0.1.12) (2026-11-23)
 
 
