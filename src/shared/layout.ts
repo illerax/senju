@@ -12,7 +12,8 @@ export function paneIds(node: LayoutNode): string[] {
   return panes(node).map((p) => p.id);
 }
 
-export function terminalIds(node: LayoutNode): string[] {
+/** Ids of every tab: terminals and viewers. */
+export function tabIds(node: LayoutNode): string[] {
   return panes(node).flatMap((p) => p.tabs);
 }
 
@@ -20,9 +21,9 @@ export function findPaneNode(node: LayoutNode, paneId: string): PaneNode | null 
   return panes(node).find((p) => p.id === paneId) ?? null;
 }
 
-/** The pane holding a terminal as one of its tabs. */
-export function paneOfTerminal(node: LayoutNode, terminalId: string): PaneNode | null {
-  return panes(node).find((p) => p.tabs.includes(terminalId)) ?? null;
+/** The pane holding a tab. */
+export function paneOfTab(node: LayoutNode, tabId: string): PaneNode | null {
+  return panes(node).find((p) => p.tabs.includes(tabId)) ?? null;
 }
 
 /** Replaces the pane with the given id by the result of `update`. */

@@ -39,6 +39,12 @@ Close the window, crash it, update it or reboot the computer: the layout, the ta
 - **How full each agent's context is** shows on its tab (`42%`; amber from 60%, red from 85%) and in the status bar. Click it, press Ctrl+Shift+K (Cmd+Shift+K), or pick **Context and Tokens…** in the terminal's menu to see [what fills the context and what the agent used](#context-and-tokens).
 - **All agents** (Ctrl+Shift+A, Cmd+Shift+A on macOS, the grid button at the top of the sidebar, or the agent count in the status bar) shows every agent as a card with its status, what it is doing, [what it runs with](#context-and-tokens), how full its context is and the last lines of its screen, live, the ones waiting for you first. Click a card or press Enter on it to go to that agent; arrows move between cards and Esc closes the overview.
 
+**See what your agents made**
+
+- An agent shows you a report, a plan, data, a page or an image in a tab next to its terminal: Markdown as a document, JSON and YAML as trees you can fold, CSV as a table, HTML with its scripts running but nothing loaded from the network, images, and code highlighted by language. The tab reloads whenever the file changes, so an agent can keep improving what you look at. [How agents use it](#viewers).
+- Claude Code gets the tools for this automatically, through Senju's MCP server in the plugin it already loads. Any other agent, and you, use the `senju` command that every terminal of Senju has: `senju open report.md`, or `… | senju show -f json`.
+- Open any file yourself with Ctrl+Shift+P (Cmd+O) or **Open File…** in a terminal's menu, and move a viewer to a window of its own with the button in its bar.
+
 **Never lose a session**
 
 - Terminals live in a background service, so closing or updating the window does not stop them.
@@ -128,6 +134,7 @@ Create a group with **+** at the top of the sidebar; it starts in your home fold
 - Ctrl+Shift+F (Cmd+F on macOS) or **Find…** in a terminal's context menu searches the tab's whole scrollback, starting from the selected text. Every match is highlighted; Enter and Shift+Enter step through them, **Aa** matches case, **.\*** takes a regular expression, and Escape closes the search.
 - Ctrl+Shift+Space (Cmd+Shift+Space on macOS) or **Copy Mode** in a terminal's context menu selects and copies text with the keyboard alone, from the screen or the scrollback. A cursor appears; a bar at the bottom of the terminal lists the keys, as you set them. By default: h j k l or the arrows move, w and b go by words, 0 and $ (Home, End) to the ends of a line, PageUp and PageDown by pages, g and G to the top and the bottom. v starts selecting, V selects whole lines, / finds text and n and N step through the matches. y or Enter copies the selection, or the cursor's line without one, and leaves copy mode; Escape or q leaves without copying. No key reaches the program in the terminal meanwhile, so an agent's output can be copied while it works.
 - Exiting a shell closes its tab; the last tab closes its pane, and the last pane its workspace.
+- A tab can also be a [viewer](#viewers) of a file: renamed, moved, zoomed and closed like a terminal's tab.
 
 Closing the last window only closes the UI: every terminal keeps running and is there, in every window, when you open Senju again. To stop everything, use **Quit and stop all processes** at the bottom of the settings; the next start restores the terminals as after a reboot.
 
@@ -150,7 +157,8 @@ Change any of them in **Settings → Keyboard Shortcuts** (the gear at the botto
 | Go to the agent waiting longest, then the next | Ctrl+Shift+J | Cmd+J |
 | Show or hide all agents | Ctrl+Shift+A | Cmd+Shift+A |
 | New terminal tab | Ctrl+Shift+T | Cmd+T |
-| Close terminal tab | Ctrl+Shift+W | Cmd+W |
+| Close tab | Ctrl+Shift+W | Cmd+W |
+| Open a file in a viewer tab | Ctrl+Shift+P | Cmd+O |
 | Rename tab | Ctrl+Shift+R | Cmd+Shift+R |
 | Next / previous tab | Ctrl+Tab / Ctrl+Shift+Tab | Ctrl+Tab, Cmd+Shift+] / [ |
 | Tab 1–9 | Ctrl+Shift+1…9 | Cmd+1…9 |
@@ -167,6 +175,34 @@ Change any of them in **Settings → Keyboard Shortcuts** (the gear at the botto
 | Reset the zoom of all terminals and tabs | Ctrl+Alt+Shift+0 | Cmd+Alt+0 |
 
 "Close workspace" has no default shortcut. Switching to another group returns to the workspace you last used there.
+
+### Viewers
+
+A viewer shows a file next to the terminal it was opened from: in another pane that shows a viewer, or in a new pane to the right of the terminal (below a tall one). The focus stays in the terminal, so you can go on talking to the agent. Asking again for a file that is open brings its tab to the front.
+
+| Format | Shown as |
+| --- | --- |
+| Markdown (`.md`) | a document, code blocks highlighted, links open in the browser |
+| JSON, JSONC, YAML | a tree; the top two levels open, a click opens or closes a node, the context menu copies a node's path (`.agents.claude`) or value |
+| CSV, TSV | a table |
+| HTML | the page, its scripts running in a sandbox; it loads nothing from the network or your disk |
+| PNG, JPEG, GIF, WebP, SVG… | the image, fitted; a click shows its actual size |
+| Source code, diffs, logs | text with line numbers, highlighted by language |
+
+**Source** in the viewer's bar shows the file as it is; files larger than 5 MB show their start. A viewer reloads within a second of the file changing, keeping its scroll position and the tree nodes you opened. The button at the right end of the bar moves the viewer to a window of its own; closing that window closes it.
+
+**Agents.** Every terminal of Senju has the `senju` command:
+
+```sh
+senju open report.md                 # one or more files
+senju open --name "Test run" out.json
+cargo test --message-format json | senju show -f json   # what is piped in
+senju open --window chart.html       # in a window of its own
+```
+
+`--format` (`-f`) takes `markdown`, `json`, `yaml`, `html`, `csv`, `image`, `text` or a language such as `python` or `diff`; without it, the extension tells. Content that is piped in is kept by Senju until its tab is closed, and goes with a closed or exported group.
+
+Claude Code gets the same as MCP tools, `show_file` and `show_content`, from the plugin Senju passes to it, so asking it to "show the report in Senju" is enough. Other agents can run the command, or `senju mcp` as an MCP server over stdio: add it to the agent's MCP configuration (Codex: `codex mcp add senju -- senju mcp`), or tell it about the command in its instructions (`AGENTS.md`). The tools only work in terminals of Senju; elsewhere they say so.
 
 ### Context and tokens
 
@@ -306,6 +342,7 @@ The code is split by process:
 - `src/daemon` — the background service: owns the pseudo terminals (node-pty), mirrors each into a headless xterm for scrollback, tracks folders, programs and agent sessions, and saves the state.
 - `src/main` — the Electron main process: starts or connects to the service and relays messages.
 - `src/renderer` — the UI: sidebar, pane layout, tabs, xterm.js terminals, settings, menus and dialogs.
+- `src/cli` — the `senju` command and its MCP server, run in terminals with Electron as Node.
 - `src/shared` — state types, the protocol, layout operations, commands, settings and themes.
 - `recipes` — built-in agent recipes.
 

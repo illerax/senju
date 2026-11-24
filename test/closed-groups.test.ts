@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { insertRestored, restoreGroup, snapshotGroup } from '../src/daemon/closed-groups';
 import { applyAction } from '../src/daemon/workspace';
-import { panes, terminalIds } from '../src/shared/layout';
+import { panes, tabIds } from '../src/shared/layout';
 import { emptyState, type AppState } from '../src/shared/types';
 
 const W = 'win';
@@ -20,7 +20,7 @@ function twoGroups() {
   const group = state.groups[1];
   applyAction(state, { type: 'splitPane', paneId: group.workspaces[0].focusedPaneId, side: 'right' }, '/');
   applyAction(state, { type: 'createWorkspace', groupId: group.id }, '/');
-  const [id] = terminalIds(group.workspaces[0].root);
+  const [id] = tabIds(group.workspaces[0].root);
   state.terminals[id].job = { argv: ['claude'], cwd: '/b', env: {}, startedAt: 1, recipe: 'claude-code', sessionId: 's1' };
   state.terminals[id].agent = { state: 'working', at: 1 };
   return { state, group, id };
@@ -51,7 +51,7 @@ describe('closed groups', () => {
     expect(back.workspaces.map((w) => w.name)).toEqual(group.workspaces.map((w) => w.name));
     expect(panes(back.workspaces[0].root)).toHaveLength(2);
     expect(active(state)).toBe(back.workspaces[1].id);
-    const ids = back.workspaces.flatMap((w) => terminalIds(w.root));
+    const ids = back.workspaces.flatMap((w) => tabIds(w.root));
     expect(ids.every((i) => state.terminals[i]?.id === i && !Object.keys(saved.terminals).includes(i))).toBe(true);
     expect(state.terminals[ids[0]].job?.sessionId).toBe('s1');
     expect(restored.scrollback[ids[0]]).toBe('output');

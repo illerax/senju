@@ -12,13 +12,15 @@ import { BUILD_ID } from '../shared/build';
 import { paths } from '../shared/paths';
 import { loadSettings, resolveFont, resolveTheme, saveSettings, type Settings } from '../shared/settings';
 import type { AppState, UiState, WindowState } from '../shared/types';
-import { terminalIds } from '../shared/layout';
+import { tabIds } from '../shared/layout';
 import { DaemonClient, DaemonReplaceDeclined } from './daemon-client';
 import { daemonLauncher } from './daemon-runtime';
 import { diagnose, diagnoseError, systemInfo, watchEventLoop } from '../shared/diagnostics';
 import { Updater } from './updater';
 import { clearNotification, notify, setBadge } from './notifications';
 import type { UpdateAction } from '../shared/update';
+import { isCommand, run } from '../cli/run';
+import { registerViewerScheme, ViewerWindows } from './viewer-windows';
 
 const daemon = new DaemonClient(
   () => daemonLauncher(path.join(__dirname, 'daemon.js')),
@@ -36,6 +38,7 @@ const daemon = new DaemonClient(
     return response === 0;
   },
 );
+const viewerWindows = new ViewerWindows(daemon, () => quitting);
 /** Open windows by their id in the state. */
 const windows = new Map<string, BrowserWindow>();
 /** Ids of open windows, the most recently focused last. */
@@ -64,6 +67,7 @@ function lastFocused(): BrowserWindow | null {
 
 /** Sends terminal output only to the window that shows the terminal, everything else to all windows. */
 function send(msg: DaemonMessage | { type: 'connected'; outdated: boolean }): void {
+  if (msg.type === 'state' || msg.type === 'connected') viewerWindows.broadcast('daemon', msg);
   if (msg.type === 'data' || msg.type === 'snapshot' || msg.type === 'usage') {
     const owner = windows.get(terminalWindows.get(msg.terminalId) ?? '');
     if (owner) return owner.webContents.send('daemon', msg);
@@ -133,6 +137,11 @@ function createWindow(state: WindowState, near?: BrowserWindow | null): void {
   win.on('closed', () => {
     if (timer) clearTimeout(timer);
     windows.delete(windowId);
+    // Windows of viewers do not keep the app open: they come back with it.
+    if (!windows.size && process.platform !== 'darwin') {
+      quitting = true;
+      app.quit();
+    }
     focusOrder = focusOrder.filter((id) => id !== windowId);
     badges.delete(win);
     updateBadge();
@@ -245,11 +254,15 @@ function ensureSettingsFile(): void {
 }
 
 function registerIpc(): void {
-  ipcMain.on('daemon', (_e, msg: ClientMessage) => daemon.send(msg));
+  ipcMain.on('daemon', (e, msg: ClientMessage) => {
+    viewerWindows.asked(e.sender, msg);
+    daemon.send(msg);
+  });
   ipcMain.handle('settings', () => loadSettings());
   ipcMain.handle('saveSettings', (e, patch: Partial<Settings>) => {
     const saved = saveSettings(patch);
     for (const window of windows.values()) if (window.webContents !== e.sender) window.webContents.send('settings', saved);
+    viewerWindows.broadcast('settings', saved);
     return saved;
   });
   ipcMain.handle('state', () => lastState);
@@ -260,6 +273,12 @@ function registerIpc(): void {
     const win = senderWindow(e);
     if (!win) return null;
     const result = await dialog.showOpenDialog(win, { properties: ['openDirectory', 'createDirectory'], defaultPath });
+    return result.canceled ? null : result.filePaths[0];
+  });
+  ipcMain.handle('pickFile', async (e, defaultPath?: string) => {
+    const win = senderWindow(e);
+    if (!win) return null;
+    const result = await dialog.showOpenDialog(win, { properties: ['openFile'], defaultPath });
     return result.canceled ? null : result.filePaths[0];
   });
   // Groups saved to a file the user picks (closed-groups.ts in the daemon reads and writes them).
@@ -297,6 +316,7 @@ function registerIpc(): void {
     }
   });
   ipcMain.on('stopAll', () => void stopAll());
+  ipcMain.on('closeWindow', (e) => senderWindow(e)?.close());
   ipcMain.on('newWindow', (e, groupId?: string) => newWindow(senderWindow(e), typeof groupId === 'string' ? groupId : undefined));
   ipcMain.handle('daemonOutdated', () => daemon.outdated);
   ipcMain.handle('appInfo', () => ({
@@ -339,10 +359,16 @@ process.on('unhandledRejection', (err) => {
   diagnoseError('main', 'unhandled rejection', err);
 });
 
+registerViewerScheme();
+
 // An isolated home (used by tests) gets its own browser profile and single-instance lock.
 if (process.env.SENJU_HOME) app.setPath('userData', path.join(process.env.SENJU_HOME, 'electron'));
 
-if (!app.requestSingleInstanceLock()) {
+// Started as the `senju` command in a terminal of Senju, as the installed app may come before Senju's own command in a PATH.
+const commandArgs = process.argv.slice(app.isPackaged ? 1 : 2);
+if (isCommand(commandArgs)) {
+  void run(commandArgs).then((code) => app.exit(code));
+} else if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
   app.on('second-instance', () => {
@@ -358,15 +384,17 @@ if (!app.requestSingleInstanceLock()) {
   daemon.on('message', (msg) => {
     if (msg.type === 'state') {
       lastState = msg.state;
-      terminalWindows = new Map(msg.state.groups.flatMap((g) => g.workspaces.flatMap((w) => terminalIds(w.root).map((id) => [id, g.windowId] as const))));
+      terminalWindows = new Map(msg.state.groups.flatMap((g) => g.workspaces.flatMap((w) => tabIds(w.root).map((id) => [id, g.windowId] as const))));
       for (const [windowId, from] of requested) {
         const window = msg.state.windows.find((w) => w.id === windowId);
         if (!window) continue;
         requested.delete(windowId);
         createWindow(window, from);
       }
+      if (windows.size) viewerWindows.update(msg.state);
       resolveFirstState();
     }
+    if (viewerWindows.received(msg)) return;
     send(msg);
   });
   daemon.on('connected', () => send({ type: 'connected', outdated: daemon.outdated }));
@@ -380,6 +408,7 @@ if (!app.requestSingleInstanceLock()) {
     });
     buildMenu();
     registerIpc();
+    viewerWindows.serve();
     try {
       await daemon.connect();
     } catch (err) {
@@ -394,6 +423,7 @@ if (!app.requestSingleInstanceLock()) {
     // Wait for the first state so the windows open with their saved bounds.
     await firstState;
     openWindows();
+    if (lastState) viewerWindows.update(lastState);
     updater.start();
   });
 

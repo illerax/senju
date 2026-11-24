@@ -15,11 +15,14 @@ const api = {
   saveGroupFile: (name: string) => ipcRenderer.invoke('saveGroupFile', name) as Promise<string | null>,
   openGroupFile: () => ipcRenderer.invoke('openGroupFile') as Promise<string | null>,
   pickFolder: (defaultPath?: string) => ipcRenderer.invoke('pickFolder', defaultPath) as Promise<string | null>,
+  pickFile: (defaultPath?: string) => ipcRenderer.invoke('pickFile', defaultPath) as Promise<string | null>,
   clipboardRead: (type: 'clipboard' | 'selection' = 'clipboard') => ipcRenderer.invoke('clipboardRead', type) as Promise<string>,
   clipboardWrite: (text: string, type: 'clipboard' | 'selection' = 'clipboard') => ipcRenderer.send('clipboardWrite', text, type),
   openExternal: (url: string) => ipcRenderer.send('openExternal', url),
   openConfig: (what: 'settings' | 'recipes' | 'logs') => ipcRenderer.send('openConfig', what),
   stopAll: () => ipcRenderer.send('stopAll'),
+  /** Closes this window; a page may not close a window it did not open. */
+  closeWindow: () => ipcRenderer.send('closeWindow'),
   /** Opens a new window, empty or showing a group moved from this one. */
   newWindow: (groupId?: string) => ipcRenderer.send('newWindow', groupId),
   daemonOutdated: () => ipcRenderer.invoke('daemonOutdated') as Promise<boolean>,

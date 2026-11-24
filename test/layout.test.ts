@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { paneIds, removePane, setSplitSizes, splitPane, terminalIds } from '../src/shared/layout';
+import { paneIds, removePane, setSplitSizes, splitPane, tabIds } from '../src/shared/layout';
 import type { LayoutNode, PaneNode } from '../src/shared/types';
 
 let n = 0;
@@ -62,7 +62,7 @@ describe('removePane', () => {
 describe('layout helpers', () => {
   it('lists terminals of all tabs', () => {
     const root = splitPane(pane('a', ['t1', 't2']), 'a', pane('b', ['t3']), 'right', id);
-    expect(terminalIds(root)).toEqual(['t1', 't2', 't3']);
+    expect(tabIds(root)).toEqual(['t1', 't2', 't3']);
   });
 
   it('normalizes split sizes and ignores invalid input', () => {

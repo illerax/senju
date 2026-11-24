@@ -1,5 +1,5 @@
 // The renderer: a sidebar of groups with their workspaces, and the active
-// workspace split into panes, each with its own tabs of terminals. All
+// workspace split into panes, each with its own tabs of terminals and viewers. All
 // changes go to the daemon as actions; the UI re-renders from the state the
 // daemon sends back.
 
@@ -13,9 +13,9 @@ import './styles.css';
 import type { Action, DaemonMessage, SplitSide } from '../shared/protocol';
 import type { Settings } from '../shared/settings';
 import type { UpdateStatus } from '../shared/update';
-import { clampZoom, isLight, resolveTheme, zoomPercent } from '../shared/themes';
+import { clampZoom, resolveTheme, zoomPercent } from '../shared/themes';
 import { windowView, type AppState, type GroupState, type LayoutNode, type PaneNode, type SplitNode, type TerminalState, type WindowView, type WorkspaceState } from '../shared/types';
-import { findPaneNode, panes, terminalIds } from '../shared/layout';
+import { findPaneNode, panes, tabIds } from '../shared/layout';
 import { agentStatus, Attention, formatWait, nextInQueue, type AgentKind, type AgentStatus, type Wait } from '../shared/agent-status';
 import { senju } from './api';
 import { confirmDialog } from './dialog';
@@ -28,6 +28,9 @@ import { Overview, OVERVIEW_LINES, type OverviewCard } from './overview';
 import { contextLevel, UsageView } from './usage-view';
 import { contextPercent, formatTokens, profileText } from '../shared/usage';
 import { measureSwitch, nameTerminals, note, report, startPerfMonitor, terminalName } from './perf-monitor';
+import { applyTheme } from './theme';
+import { ViewerView } from './viewer-view';
+import { viewerLabel } from '../shared/viewer';
 
 const SLOW_RENDER_MS = 100;
 
@@ -42,6 +45,7 @@ let platform: string;
 let home: string;
 let keymap: Keymap;
 const terminals = new Map<string, TerminalView>();
+const viewers = new Map<string, ViewerView>();
 const paneViews = new Map<string, PaneView>();
 /** Split containers of the rendered layout, for applying sizes without rebuilding. */
 const splitElements = new Map<string, { node: SplitNode; children: HTMLElement[] }>();
@@ -114,6 +118,12 @@ function focusedTerminal(): TerminalView | undefined {
   return pane ? terminals.get(pane.activeTab) : undefined;
 }
 
+/** The terminal or viewer of the focused pane's active tab. */
+function focusedTab(): TerminalView | ViewerView | undefined {
+  const pane = focusedPane();
+  return pane ? (terminals.get(pane.activeTab) ?? viewers.get(pane.activeTab)) : undefined;
+}
+
 function shortPath(p: string): string {
   return home && (p === home || p.startsWith(`${home}/`)) ? `~${p.slice(home.length)}` : p;
 }
@@ -152,7 +162,7 @@ function runningJobs(ids: string[]): string[] {
 
 function workspaceAgents(workspace: WorkspaceState): Record<AgentKind, number> {
   const counts = { working: 0, waiting: 0, done: 0, background: 0 };
-  for (const id of terminalIds(workspace.root)) {
+  for (const id of tabIds(workspace.root)) {
     const status = agentStatus(state.terminals[id]);
     if (status) counts[status.kind]++;
   }
@@ -400,7 +410,7 @@ function renderSidebar(): void {
       g.list,
       group.workspaces.map((workspace) => {
         const w = workspaceElementsFor(workspace.id);
-        const ids = terminalIds(workspace.root);
+        const ids = tabIds(workspace.root);
         const agents = workspaceAgents(workspace);
         w.item.classList.toggle('active', workspace.id === state.activeWorkspaceId);
         w.item.classList.toggle('colored', !!workspace.color);
@@ -455,7 +465,7 @@ async function changeGroupCwd(group: GroupState): Promise<void> {
 }
 
 async function deleteGroup(group: GroupState): Promise<void> {
-  const ids = group.workspaces.flatMap((w) => terminalIds(w.root));
+  const ids = group.workspaces.flatMap((w) => tabIds(w.root));
   const ok = await confirmDialog({
     title: `Delete group “${group.name}”?`,
     detail: `${group.workspaces.length} workspace(s) with ${ids.length} terminal(s) will be closed.`,
@@ -466,7 +476,7 @@ async function deleteGroup(group: GroupState): Promise<void> {
 
 /** Saves the group to disk and closes it; it can be reopened as it was. */
 async function closeGroup(group: GroupState): Promise<void> {
-  const jobs = runningJobs(group.workspaces.flatMap((w) => terminalIds(w.root)));
+  const jobs = runningJobs(group.workspaces.flatMap((w) => tabIds(w.root)));
   if (jobs.length) {
     const ok = await confirmDialog({
       title: `Close group “${group.name}”?`,
@@ -510,7 +520,7 @@ async function closedGroupsMenu(at: HTMLElement): Promise<void> {
 }
 
 async function closeWorkspace(workspace: WorkspaceState): Promise<void> {
-  const jobs = runningJobs(terminalIds(workspace.root));
+  const jobs = runningJobs(tabIds(workspace.root));
   if (jobs.length && !(await confirmClose(`Close “${workspace.name}”?`, `Running: ${jobs.join(', ')}`))) return;
   act({ type: 'closeWorkspace', workspaceId: workspace.id });
 }
@@ -537,6 +547,37 @@ function terminalView(terminalId: string): TerminalView {
   return view;
 }
 
+function viewerView(viewerId: string): ViewerView {
+  let view = viewers.get(viewerId);
+  if (!view) {
+    view = new ViewerView(viewerId, {
+      read: (id, known) => senju.send({ type: 'readViewer', viewerId: id, known }),
+      openLink: (url) => senju.openExternal(url),
+      copy: (text) => senju.clipboardWrite(text),
+      menu: (items, e) => contextMenu(items, e),
+      onFocus: (id) => {
+        const workspace = activeContext()?.workspace;
+        const pane = workspace && panes(workspace.root).find((p) => p.tabs.includes(id));
+        if (pane && workspace.focusedPaneId !== pane.id) act({ type: 'focusPane', paneId: pane.id });
+        if (pane) markFocus(pane.id);
+      },
+      onZoom: (id, steps) => setTabZoom(id, tabZoom(id) + steps),
+      popOut: (id) => act({ type: 'popOutViewer', viewerId: id }),
+      home: () => home,
+    });
+    viewers.set(viewerId, view);
+  }
+  return view;
+}
+
+/** Opens a file the user picks in a viewer tab of the focused pane. */
+async function openFile(): Promise<void> {
+  const pane = focusedPane();
+  if (!pane) return;
+  const file = await senju.pickFile(state.terminals[pane.activeTab]?.cwd);
+  if (file) act({ type: 'openViewer', paneId: pane.id, file });
+}
+
 async function terminalMenu(terminalId: string, e: MouseEvent): Promise<void> {
   const view = terminals.get(terminalId);
   const workspace = activeContext()?.workspace;
@@ -549,6 +590,7 @@ async function terminalMenu(terminalId: string, e: MouseEvent): Promise<void> {
     { id: 'copyMode', label: 'Copy Mode', accelerator: keymap.accelerator('copyMode') },
     { id: '-', label: '' },
     { id: 'tab', label: 'New Tab', accelerator: keymap.accelerator('newTab') },
+    { id: 'openFile', label: 'Open File…', accelerator: keymap.accelerator('openFile') },
     { id: 'right', label: 'Split Right', accelerator: keymap.accelerator('splitRight') },
     { id: 'down', label: 'Split Down', accelerator: keymap.accelerator('splitDown') },
     { id: '-', label: '' },
@@ -567,6 +609,7 @@ async function terminalMenu(terminalId: string, e: MouseEvent): Promise<void> {
   if (choice === 'find') view?.find();
   if (choice === 'copyMode') view?.toggleCopyMode();
   if (choice === 'tab') act({ type: 'createTab', paneId: pane.id });
+  if (choice === 'openFile') void openFile();
   if (choice === 'right' || choice === 'down') act({ type: 'splitPane', paneId: pane.id, side: choice });
   if (choice === 'closeTab') void closeTab(terminalId);
   if (choice === 'closePane') void closePane(pane);
@@ -584,6 +627,7 @@ function setZoom(zoom: number): void {
   if (next === settings.zoom) return;
   settings = { ...settings, zoom: next };
   for (const view of terminals.values()) view.applySettings(settings);
+  for (const [id, view] of viewers) view.setZoom(next + tabZoom(id));
   renderStatus();
   if (zoomSave) clearTimeout(zoomSave);
   zoomSave = setTimeout(() => {
@@ -597,11 +641,11 @@ const tabZoomSends = new Map<string, { zoom: number; timer: ReturnType<typeof se
 
 /** Pixels a terminal is zoomed by, on top of the zoom of all terminals. */
 function tabZoom(terminalId: string): number {
-  return tabZoomSends.get(terminalId)?.zoom ?? state.terminals[terminalId]?.zoom ?? 0;
+  return tabZoomSends.get(terminalId)?.zoom ?? state.terminals[terminalId]?.zoom ?? state.viewers[terminalId]?.zoom ?? 0;
 }
 
 function anyTabZoomed(): boolean {
-  return Object.keys(state.terminals).some((id) => tabZoom(id));
+  return [...Object.keys(state.terminals), ...Object.keys(state.viewers)].some((id) => tabZoom(id));
 }
 
 /** Zooms one terminal; sent to the daemon once the zooming pauses, as a mouse wheel zooms in quick steps. */
@@ -616,12 +660,13 @@ function setTabZoom(terminalId: string, zoom: number): void {
   }, 300);
   tabZoomSends.set(terminalId, { zoom: next, timer });
   terminals.get(terminalId)?.setZoom(next);
+  viewers.get(terminalId)?.setZoom(settings.zoom + next);
   renderStatus();
 }
 
 /** Returns every terminal to the font's own size. */
 function resetAllZoom(): void {
-  for (const id of Object.keys(state.terminals)) setTabZoom(id, 0);
+  for (const id of [...Object.keys(state.terminals), ...Object.keys(state.viewers)]) setTabZoom(id, 0);
   setZoom(0);
 }
 
@@ -701,6 +746,16 @@ class PaneView {
         const terminal = state.terminals[terminalId];
         const { tab, label, mark, usage } = this.tabElements(terminalId);
         tab.classList.toggle('active', terminalId === node.activeTab);
+        const viewer = state.viewers[terminalId];
+        if (viewer) {
+          if (!mark.classList.contains('file')) mark.innerHTML = iconSvg('file', 12);
+          mark.className = 'tab-mark file';
+          mark.title = '';
+          if (!label.querySelector('input')) label.textContent = viewerLabel(viewer);
+          usage.hidden = true;
+          tab.title = viewer.owned ? 'Sent by an agent' : shortPath(viewer.file);
+          return tab;
+        }
         const status = agentStatus(terminal);
         mark.className = `tab-mark ${status?.kind ?? (terminal?.job ? 'running' : '')}`.trim();
         mark.title = status ? `Agent ${statusText(terminalId, status)}` : '';
@@ -720,6 +775,15 @@ class PaneView {
     );
     for (const id of this.tabs.keys()) if (!node.tabs.includes(id)) this.tabs.delete(id);
 
+    const viewer = state.viewers[node.activeTab];
+    if (viewer) {
+      const view = viewerView(node.activeTab);
+      view.update(viewer);
+      view.setZoom(settings.zoom + tabZoom(node.activeTab));
+      if (this.body.firstChild !== view.element) this.body.replaceChildren(view.element);
+      view.attach();
+      return;
+    }
     const view = terminalView(node.activeTab);
     view.setZoom(tabZoom(node.activeTab));
     view.attach();
@@ -782,8 +846,8 @@ class PaneView {
     }
   }
 
-  get activeView(): TerminalView | undefined {
-    return terminals.get(this.node.activeTab);
+  get activeView(): TerminalView | ViewerView | undefined {
+    return terminals.get(this.node.activeTab) ?? viewers.get(this.node.activeTab);
   }
 
   tabLabelElement(terminalId: string): HTMLElement | null {
@@ -814,8 +878,10 @@ function renderTabUsage(element: HTMLElement, terminalId: string): void {
 }
 
 function renameTab(terminalId: string, label: HTMLElement): void {
+  const viewer = state.viewers[terminalId];
   const terminal = state.terminals[terminalId];
-  startRename(label, terminal?.name ?? tabLabel(terminal), (n) => act({ type: 'renameTab', terminalId, name: n }));
+  const current = viewer ? viewerLabel(viewer) : (terminal?.name ?? tabLabel(terminal));
+  startRename(label, current, (n) => act({ type: 'renameTab', terminalId, name: n }));
 }
 
 function paneView(node: PaneNode): PaneView {
@@ -995,7 +1061,7 @@ function renderWorkspace(force = false): void {
   for (const [id, view] of paneViews) if (!ids.has(id) && !view.element.isConnected) paneViews.delete(id);
   markFocus(workspace.focusedPaneId);
   showMaximized(workspace);
-  const focused = focusedTerminal();
+  const focused = focusedTab();
   if (focused && !editing && !document.activeElement?.closest('.terminal-overlay')) {
     if (!focused.element.contains(document.activeElement)) focused.focus();
   }
@@ -1041,7 +1107,7 @@ function renderStatus(): void {
     else swatch.classList.add('empty');
     where.prepend(swatch);
     parts.push(where);
-    for (const id of terminalIds(ctx.workspace.root)) {
+    for (const id of tabIds(ctx.workspace.root)) {
       const terminal = state.terminals[id];
       const status = agentStatus(terminal);
       if (status) {
@@ -1061,7 +1127,7 @@ function renderStatus(): void {
       const kind = counts.waiting ? 'waiting' : counts.done ? 'done' : null;
       if (workspace.id !== ctx?.workspace.id && kind) {
         // The longest wait of the workspace, as the queue is sorted.
-        const ids = terminalIds(workspace.root);
+        const ids = tabIds(workspace.root);
         const first = waitingAgents.find((w) => ids.includes(w.terminalId));
         const waited = first ? ` ${formatWait(Date.now() - first.since)}` : '';
         const elsewhere = item(`${kind} link`, `${group.name}/${workspace.name} ${kind === 'done' ? 'finished' : 'waiting'}${waited}`, 'Show this workspace');
@@ -1146,7 +1212,7 @@ function visibleTerminals(): Set<string> {
 
 function terminalPlace(terminalId: string): { group: GroupState; workspace: WorkspaceState } | null {
   for (const group of state.groups) {
-    for (const workspace of group.workspaces) if (terminalIds(workspace.root).includes(terminalId)) return { group, workspace };
+    for (const workspace of group.workspaces) if (tabIds(workspace.root).includes(terminalId)) return { group, workspace };
   }
   return null;
 }
@@ -1222,7 +1288,7 @@ const overview = new Overview({
   onToggle: (open) => {
     document.body.classList.toggle('overview-open', open);
     overviewWorkspace = state?.activeWorkspaceId ?? null;
-    if (!open) focusedTerminal()?.focus();
+    if (!open) focusedTab()?.focus();
     refreshAttention();
   },
 });
@@ -1232,7 +1298,7 @@ let overviewWorkspace: string | null = null;
 /** Every agent: those waiting for the user first, longest wait first, then the rest in sidebar order. */
 function overviewCards(): OverviewCard[] {
   const ordered: string[] = [];
-  for (const group of state.groups) for (const workspace of group.workspaces) ordered.push(...terminalIds(workspace.root));
+  for (const group of state.groups) for (const workspace of group.workspaces) ordered.push(...tabIds(workspace.root));
   const queue = waitingAgents.map((w) => w.terminalId);
   const ids = [...queue, ...ordered.filter((id) => !queue.includes(id))];
   return ids.flatMap((terminalId) => {
@@ -1437,8 +1503,13 @@ async function runCommand(command: Command): Promise<void> {
     }
     case 'openSettings':
       return settingsView.show();
-    case 'copy':
-      return focusedTerminal()?.copy();
+    case 'copy': {
+      const tab = focusedTab();
+      if (tab instanceof ViewerView) return senju.clipboardWrite(tab.selection());
+      return tab?.copy();
+    }
+    case 'openFile':
+      return openFile();
     case 'paste':
       return focusedTerminal()?.paste();
     case 'find':
@@ -1478,6 +1549,7 @@ function onMessage(msg: UiMessage): void {
   switch (msg.type) {
     case 'connected':
       for (const view of terminals.values()) view.reset();
+      for (const view of viewers.values()) view.reset();
       layoutSignature = '';
       showOutdated(msg.outdated);
       break;
@@ -1490,6 +1562,12 @@ function onMessage(msg: UiMessage): void {
         if (!state.terminals[id]) {
           view.dispose();
           terminals.delete(id);
+        }
+      }
+      for (const [id, view] of viewers) {
+        if (!state.viewers[id]) {
+          view.dispose();
+          viewers.delete(id);
         }
       }
       const started = performance.now();
@@ -1515,6 +1593,9 @@ function onMessage(msg: UiMessage): void {
       break;
     case 'data':
       terminals.get(msg.terminalId)?.onData(msg.data);
+      break;
+    case 'viewer':
+      viewers.get(msg.viewerId)?.setContent(msg.content);
       break;
     case 'error':
       console.error(msg.message);
@@ -1586,17 +1667,9 @@ function applySettings(next: Settings): void {
   // A zoom not saved yet is newer than the one in saved settings.
   settings = zoomSave ? { ...next, zoom: settings.zoom } : next;
   keymap = new Keymap(platform, settings.keybindings);
-  const theme = resolveTheme(settings);
-  const root = document.documentElement.style;
-  const light = isLight(theme.background);
-  root.setProperty('--bg', theme.background);
-  root.setProperty('--fg', theme.foreground);
-  root.setProperty('--link', theme.blue);
-  root.setProperty('--waiting', theme.red);
-  root.setProperty('--done', theme.green);
-  root.setProperty('color-scheme', light ? 'light' : 'dark');
-  document.body.classList.toggle('light', light);
+  applyTheme(resolveTheme(settings));
   for (const view of terminals.values()) view.applySettings(settings);
+  for (const [id, view] of viewers) view.setZoom(settings.zoom + tabZoom(id));
   refreshTips();
   if (state) renderStatus();
 }
@@ -1634,7 +1707,7 @@ async function main(): Promise<void> {
     confirm: (message, detail) => confirmDialog({ title: message, detail, confirmLabel: 'Delete' }),
   });
   document.body.append(settingsView.element);
-  settingsView.element.addEventListener('close', () => focusedTerminal()?.focus());
+  settingsView.element.addEventListener('close', () => focusedTab()?.focus());
 
   $('sidebar-logo').innerHTML = logoSvg(16);
   $('add-group').replaceWith(Object.assign(iconButton('plus', 'New group'), { id: 'add-group' }));

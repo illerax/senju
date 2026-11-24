@@ -124,11 +124,12 @@ async function client() {
       if (msg.type === 'error') (c.errors ??= []).push(msg.message);
       if (msg.type === 'peek') c.peek = msg.screens;
       if (msg.type === 'usage') c.usage = msg.details;
+      if (msg.type === 'viewer') (c.viewers ??= {})[msg.viewerId] = msg;
       if (msg.type === 'snapshot' || msg.type === 'data') c.output[msg.terminalId] = (c.output[msg.terminalId] ?? '') + msg.data;
     }
   });
   c.send = (msg) => socket.write(`${JSON.stringify(msg)}\n`);
-  c.send({ type: 'hello', protocol: 3 });
+  c.send({ type: 'hello', protocol: 4 });
   await waitFor(() => c.state);
   return c;
 }
@@ -339,6 +340,59 @@ for (const g of c.state.groups.filter((g) => g.name === 'closable')) c.send({ ty
 c.send({ type: 'action', action: { type: 'importGroup', file: path.join(home, 'missing.senju') } });
 check(await waitFor(() => c.errors?.some((m) => m.includes('missing.senju'))), 'a file that cannot be opened is reported');
 await waitFor(() => closableIndex() < 0);
+
+// Viewers: the senju command and its MCP server show files next to the terminal.
+const viewerIds = () => Object.keys(c.state.viewers ?? {});
+const viewerPane = () => panesOf(workspaces()[0].root).find((p) => p.tabs.some((id) => c.state.viewers?.[id]));
+fs.writeFileSync(path.join(work, 'report.md'), '# Report\n');
+c.send({ type: 'attach', terminalId: termT });
+// By its path: the rc files of the user's shell may put an installed Senju first in PATH.
+c.send({ type: 'input', terminalId: termT, data: `senju='${path.join(home, 'bin', 'senju')}'\r` });
+c.send({ type: 'input', terminalId: termT, data: `cd '${work}' && "$senju" open report.md -n Report && echo opened"-"ok\r` });
+check(await waitFor(() => c.output[termT]?.includes('opened-ok')), 'senju open succeeds in a terminal');
+const report = viewerIds()[0];
+check(c.state.viewers?.[report]?.file === path.join(work, 'report.md') && c.state.viewers[report].name === 'Report', 'a viewer shows the file under the name given');
+const besideA = workspaces()[0].root.type === 'split' && viewerPane()?.tabs.join() === report;
+check(besideA && !c.state.terminals[report], 'the viewer opens in a pane of its own, not as a terminal');
+c.send({ type: 'readViewer', viewerId: report });
+check(await waitFor(() => c.viewers?.[report]?.content?.data === '# Report\n'), 'a window reads the viewer’s file');
+const mtime = c.viewers[report].content.mtime;
+delete c.viewers[report];
+c.send({ type: 'readViewer', viewerId: report, known: mtime });
+check(await waitFor(() => c.viewers?.[report]) && !c.viewers[report].content, 'an unchanged file is not sent again');
+c.send({ type: 'input', terminalId: termT, data: `printf '{"a":1}' | "$senju" show -f json -n data && "$senju" open report.md && echo shown"-"ok\r` });
+check(await waitFor(() => c.output[termT]?.includes('shown-ok')), 'senju show takes what is piped in');
+const data = viewerIds().find((id) => c.state.viewers[id].owned);
+check(!!data && viewerPane()?.tabs.join() === [report, data].join() && viewerIds().length === 2, 'content opens next to the viewer, and an open file comes to the front');
+check(!!data && c.state.viewers[data].file.startsWith(path.join(home, 'viewers', data)) && fs.readFileSync(c.state.viewers[data].file, 'utf8') === '{"a":1}', 'content sent without a file is kept by Senju');
+const plugin = JSON.parse(fs.readFileSync(path.join(home, 'claude-plugin', '.mcp.json'), 'utf8'));
+check(plugin.mcpServers?.senju?.args?.[1] === 'mcp', 'the Claude Code plugin brings the MCP server');
+const mcp = spawn(path.join(home, 'bin', 'senju'), ['mcp'], { env: { ...process.env, SENJU_SOCKET: socketPath, SENJU_TERMINAL_ID: termT } });
+const replies = [];
+let mcpOut = '';
+mcp.stdout.on('data', (d) => {
+  mcpOut += d;
+  const lines = mcpOut.split('\n');
+  mcpOut = lines.pop();
+  for (const line of lines) replies.push(JSON.parse(line));
+});
+const rpc = (id, method, params) => mcp.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id, method, params })}\n`);
+rpc(1, 'initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'smoke', version: '1' } });
+mcp.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' })}\n`);
+rpc(2, 'tools/list', {});
+rpc(3, 'tools/call', { name: 'show_content', arguments: { content: 'a,b\n1,2\n', format: 'csv', name: 'table' } });
+check(await waitFor(() => replies.length === 3), 'the MCP server answers');
+check(replies[1].result?.tools?.map((t) => t.name).join() === 'show_file,show_content', 'the MCP server lists its tools');
+check(!replies[2].result?.isError && viewerIds().some((id) => c.state.viewers[id].name === 'table'), 'an MCP tool call shows content');
+rpc(4, 'tools/call', { name: 'show_file', arguments: { path: path.join(work, 'missing.md') } });
+check(await waitFor(() => replies[3]?.result?.isError && replies[3].result.content[0].text.includes('does not exist')), 'a missing file is reported to the agent');
+mcp.stdin.end();
+c.send({ type: 'action', action: { type: 'closeTab', terminalId: data } });
+check(await waitFor(() => !c.state.viewers[data] && !fs.existsSync(path.join(home, 'viewers', data))), 'closing a viewer deletes the content Senju kept');
+c.send({ type: 'action', action: { type: 'popOutViewer', viewerId: report } });
+check(await waitFor(() => c.state.viewers[report]?.window && !panesOf(workspaces()[0].root).some((p) => p.tabs.includes(report))), 'a viewer moves to a window of its own');
+c.send({ type: 'action', action: { type: 'closeViewer', viewerId: report } });
+check(await waitFor(() => !c.state.viewers[report]), 'closing its window closes the viewer');
 
 // 4. A job the user stops is not restored.
 c.send({ type: 'input', terminalId: termC, data: '\x03' });
