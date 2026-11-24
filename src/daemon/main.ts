@@ -12,18 +12,21 @@ import { applyHookEvent, backgroundDiagnostics, EventSpool, hookEnv, writeHookPl
 import { describeSaved, insertRestored, listClosed, readSavedGroup, restoreGroup, snapshotGroup, writeSavedGroup } from './closed-groups';
 import { diagnose, diagnoseError, systemInfo, watchEventLoop } from '../shared/diagnostics';
 import { loadSettings, type Settings } from '../shared/settings';
-import type { AppState, ClosedGroupInfo, JobState, SavedGroup, TerminalState } from '../shared/types';
+import type { AppState, ClosedGroupInfo, JobState, SavedGroup, TerminalState, ViewerState } from '../shared/types';
 import { baseEnv, BUSY_MS, TerminalSession } from './terminal';
 import { hasChildren, inspectTerminals, type ProcessInfo } from './procinfo';
 import { findSessionFile, listSessions, loadRecipes, programOf, matchRecipe, requiredFiles, sessionFromArgs, sessionFromPidFile, type Recipe } from './recipes';
 import { planRestore } from './restore';
 import { envDiff } from './shellquote';
-import { deleteScrollback, loadState, pruneScrollback, readScrollback, saveState, saveStateAsync, writeScrollback, writeScrollbackSync } from './store';
-import { applyAction, closeTerminal, findTerminal, repairWindows, type Effects } from './workspace';
+import { deleteScrollback, loadState, pruneScrollback, pruneViewers, readScrollback, saveState, saveStateAsync, viewerDir, writeScrollback, writeScrollbackSync } from './store';
+import { applyAction, closeTab, findTab, newId, repairWindows, showViewer, type Effects } from './workspace';
+import { commandEnv, mcpServer, writeCommand } from './senju-command';
+import { ownedFileName, readViewerFile, writeOwned } from './viewers';
+import { MAX_VIEWER_BYTES, type ViewerContent } from '../shared/viewer';
 import { UsageTracker } from './usage';
 import { agentProfile } from './agent-profile';
 import { addTokens, type AgentProfile, type AgentSessionFile, type AgentUsage, type UsageDetails } from '../shared/usage';
-import { terminalIds } from '../shared/layout';
+import { tabIds } from '../shared/layout';
 
 const POLL_MS = 1000;
 const SESSION_POLL_MS = 2000;
@@ -154,11 +157,16 @@ class Daemon {
 
   async start(): Promise<void> {
     this.repairState();
-    // Before the terminals start: their Claude Code loads the plugin from there.
-    await writeHookPlugin(this.hookPlugin).catch((err) => log('could not write the Claude Code plugin', err));
+    // Before the terminals start: their Claude Code loads the plugin from there, and their shells find the command.
+    const command = await writeCommand(this.binDir).then(
+      () => true,
+      (err) => log('could not write the senju command', err),
+    );
+    await writeHookPlugin(this.hookPlugin, command ? mcpServer() : undefined).catch((err) => log('could not write the Claude Code plugin', err));
     await this.events.start().catch((err) => log('could not watch agent events', err));
     this.closedGroups = await listClosed(paths.closedGroupsDir);
     pruneScrollback(paths.stateFile, new Set(Object.keys(this.state.terminals)));
+    await pruneViewers(paths.stateFile, new Set(Object.keys(this.state.viewers))).catch((err) => log('could not remove old viewers', err));
     const jobCwds = Object.values(this.state.terminals).flatMap((t) => (t.job ? [t.job.cwd] : []));
     const present = await requiredFiles(this.recipes, jobCwds);
     for (const id of Object.keys(this.state.terminals)) this.spawn(id, true, present);
@@ -179,6 +187,8 @@ class Daemon {
   }
 
   private readonly hookPlugin = path.join(paths.runtimeDir, 'claude-plugin');
+  /** Holds the `senju` command, first in every terminal's PATH. */
+  private readonly binDir = path.join(paths.runtimeDir, 'bin');
   private readonly events = new EventSpool(path.join(paths.runtimeDir, 'events'), (id, event) => this.onHookEvent(id, event));
 
   /** An agent reported through its hooks. */
@@ -233,7 +243,7 @@ class Daemon {
       owner.agentSessions = [...(owner.agentSessions ?? []), session].slice(-MAX_AGENT_SESSIONS);
       return true;
     };
-    const workspace = findTerminal(this.state, terminal.id)?.workspace;
+    const workspace = findTab(this.state, terminal.id)?.workspace;
     const added = add(terminal);
     return (workspace ? add(workspace) : false) || added;
   }
@@ -297,7 +307,7 @@ class Daemon {
     const file = await this.sessionFile(terminal, recipe, job);
     if (!file) return null;
     const { model, subagents } = await this.usage.session({ file, format: recipe.usage.format });
-    const workspace = findTerminal(this.state, terminalId)?.workspace;
+    const workspace = findTab(this.state, terminalId)?.workspace;
     return {
       terminalId,
       agent: recipe.name,
@@ -350,19 +360,24 @@ class Daemon {
     return `${id} ${what}`;
   }
 
-  /** Drops terminals that no tab refers to and fills in terminals a tab refers to but lacks. */
+  /**
+   * Drops terminals and viewers that no tab refers to, keeping viewers shown
+   * in windows, and fills in terminals a tab refers to but lacks.
+   */
   private repairState(): void {
     repairWindows(this.state);
+    this.state.viewers ??= {};
     const used = new Set<string>();
     for (const group of this.state.groups) {
       for (const workspace of group.workspaces) {
-        for (const id of terminalIds(workspace.root)) {
+        for (const id of tabIds(workspace.root)) {
           used.add(id);
-          this.state.terminals[id] ??= { id, cwd: group.cwd || os.homedir(), cols: 80, rows: 24, env: {} };
+          if (!this.state.viewers[id]) this.state.terminals[id] ??= { id, cwd: group.cwd || os.homedir(), cols: 80, rows: 24, env: {} };
         }
       }
     }
-    for (const id of Object.keys(this.state.terminals)) if (!used.has(id)) delete this.state.terminals[id];
+    for (const id of Object.keys(this.state.terminals)) if (!used.has(id) || this.state.viewers[id]) delete this.state.terminals[id];
+    for (const [id, viewer] of Object.entries(this.state.viewers)) if (!used.has(id) && !viewer.window) delete this.state.viewers[id];
   }
 
   private spawn(terminalId: string, restoring: boolean, present?: ReadonlySet<string>): void {
@@ -382,7 +397,7 @@ class Daemon {
       id: terminalId,
       cwd: terminal.cwd,
       env,
-      senjuEnv: hookEnv(terminalId, this.hookPlugin, this.events.dir, this.env),
+      senjuEnv: { ...hookEnv(terminalId, this.hookPlugin, this.events.dir, this.env), ...commandEnv(this.binDir, paths.socket, { ...this.env, ...env }) },
       cols: terminal.cols || 80,
       rows: terminal.rows || 24,
       settings: this.settings,
@@ -410,7 +425,7 @@ class Daemon {
       if (this.shuttingDown || this.sessions.get(terminalId) !== session) return;
       this.disposeSession(terminalId);
       const effects: Effects = { created: [], removed: [] };
-      closeTerminal(this.state, terminalId, effects);
+      closeTab(this.state, terminalId, effects);
       this.applyEffects(effects);
       this.changed();
     };
@@ -436,8 +451,62 @@ class Daemon {
   }
 
   private applyEffects(effects: Effects): void {
-    for (const id of effects.removed) this.disposeSession(id);
+    for (const id of effects.removed) {
+      this.disposeSession(id);
+      // The content an agent sent to a viewer goes with it.
+      void fs.promises.rm(viewerDir(paths.stateFile, id), { recursive: true, force: true }).catch(() => {});
+    }
     for (const id of effects.created) this.spawn(id, false);
+  }
+
+  // --- viewers ---
+
+  /** Shows a file, or content without one, in a viewer next to a terminal, for the `senju` command and its MCP server. */
+  private async show(client: Client, msg: Extract<ClientMessage, { type: 'show' }>): Promise<void> {
+    const fail = (message: string) => client.send({ type: 'error', message });
+    if (msg.protocol !== PROTOCOL_VERSION) return fail('This senju command belongs to another version of Senju: run it in a new terminal.');
+    const terminalId = String(msg.terminalId ?? '');
+    if (!this.state.terminals[terminalId]) return fail('Run senju in a terminal of Senju.');
+    const text = (value: unknown) => (typeof value === 'string' && value.trim() ? value.trim() : undefined);
+    const id = newId();
+    const viewer: ViewerState = { id, file: '', name: text(msg.name), format: text(msg.format), window: msg.window === true || undefined };
+    if (typeof msg.content === 'string') {
+      if (Buffer.byteLength(msg.content) > MAX_VIEWER_BYTES) return fail(`The content is larger than ${MAX_VIEWER_BYTES / 1024 / 1024} MB.`);
+      try {
+        viewer.file = await writeOwned(viewerDir(paths.stateFile, id), ownedFileName(viewer.name, viewer.format), msg.content);
+      } catch (err) {
+        return fail(`Could not keep the content: ${(err as Error).message}`);
+      }
+      viewer.owned = true;
+    } else {
+      const file = text(msg.file);
+      if (!file || !path.isAbsolute(file)) return fail('Name the file by its absolute path.');
+      viewer.file = path.normalize(file);
+    }
+    if (this.shuttingDown) return;
+    const shown = showViewer(this.state, terminalId, viewer);
+    if (!shown) {
+      if (viewer.owned) void fs.promises.rm(viewerDir(paths.stateFile, id), { recursive: true, force: true });
+      return fail('The terminal has no tab to show the file next to.');
+    }
+    log(`viewer ${shown}: ${viewer.owned ? `content from ${terminalId}` : viewer.file}`);
+    this.changed();
+    client.send({ type: 'shown', viewerId: shown });
+  }
+
+  /** Reads of viewer files in progress, so windows asking at once share one, and a file on a dead share holds one read only. */
+  private readonly viewerReads = new Map<string, Promise<ViewerContent | null>>();
+
+  private readViewer(viewerId: string, known: number | undefined): Promise<ViewerContent | null> {
+    const viewer = this.state.viewers[viewerId];
+    if (!viewer) return Promise.resolve({ data: '', encoding: 'utf8', size: 0, truncated: false, mtime: 0, error: 'The viewer is closed.' });
+    const key = `${viewerId}\0${viewer.file}\0${known ?? ''}`;
+    let read = this.viewerReads.get(key);
+    if (!read) {
+      read = readViewerFile(viewer.file, known).finally(() => this.viewerReads.delete(key));
+      this.viewerReads.set(key, read);
+    }
+    return read;
   }
 
   /** Groups closed to disk, newest first. */
@@ -458,13 +527,22 @@ class Daemon {
     const scrollback: Record<string, string> = {};
     await Promise.all(
       group.workspaces
-        .flatMap((w) => terminalIds(w.root))
+        .flatMap((w) => tabIds(w.root))
         .map(async (id) => {
           const session = this.sessions.get(id);
           if (session) scrollback[id] = await session.persistedScrollback(this.settings.persistedScrollback);
         }),
     );
-    const saved = snapshotGroup(this.state, groupId, scrollback, Date.now());
+    const viewerContent: Record<string, string> = {};
+    await Promise.all(
+      group.workspaces
+        .flatMap((w) => tabIds(w.root))
+        .map(async (id) => {
+          const viewer = this.state.viewers[id];
+          if (viewer?.owned) viewerContent[id] = await fs.promises.readFile(viewer.file, 'utf8').catch(() => '');
+        }),
+    );
+    const saved = snapshotGroup(this.state, groupId, scrollback, Date.now(), viewerContent);
     if (!saved || this.shuttingDown) return;
     await writeSavedGroup(file, saved);
     then?.(saved);
@@ -477,6 +555,12 @@ class Daemon {
     const saved = await readSavedGroup(file);
     const restored = restoreGroup(saved);
     await Promise.all(Object.entries(restored.scrollback).map(([id, data]) => writeScrollback(paths.stateFile, id, data)));
+    await Promise.all(
+      Object.entries(restored.viewerContent).map(async ([id, data]) => {
+        const viewer = restored.viewers[id];
+        viewer.file = await writeOwned(viewerDir(paths.stateFile, id), path.basename(viewer.file), data);
+      }),
+    );
     const jobCwds = Object.values(restored.terminals).flatMap((t) => (t.job ? [t.job.cwd] : []));
     const present = await requiredFiles(this.recipes, jobCwds);
     if (this.shuttingDown) return;
@@ -904,6 +988,15 @@ class Daemon {
           .catch(() => null)
           .then((details) => client.send({ type: 'usage', terminalId: msg.terminalId, details }));
         break;
+      case 'show':
+        void this.show(client, msg).catch((err) => client.send({ type: 'error', message: (err as Error).message }));
+        break;
+      case 'readViewer': {
+        const viewerId = String(msg.viewerId);
+        const known = typeof msg.known === 'number' ? msg.known : undefined;
+        void this.readViewer(viewerId, known).then((content) => client.send({ type: 'viewer', viewerId, content: content ?? undefined }));
+        break;
+      }
       case 'shutdown':
         void this.shutdown(true);
         break;

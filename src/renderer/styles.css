@@ -674,6 +674,20 @@ body.resizing-column * {
   display: block;
 }
 
+/* A viewer's tab: a page instead of a program's mark. */
+.tab-mark.file {
+  display: flex;
+  color: var(--faint);
+}
+
+.tab.active .tab-mark.file {
+  color: var(--accent);
+}
+
+.tab-mark.file::before {
+  content: none;
+}
+
 .tab-mark.working {
   color: var(--accent-text);
 }
@@ -2092,3 +2106,482 @@ body.overview-open #workspace {
   color: var(--muted);
 }
 
+
+/* --- viewers: files shown by their format (viewer-view.ts, viewer-render.ts) --- */
+
+.viewer {
+  --viewer-zoom: 0px;
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+}
+
+.viewer-window {
+  height: 100%;
+}
+
+.viewer-window .viewer {
+  height: 100%;
+}
+
+.viewer-bar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: var(--row);
+  padding: 0 6px 0 12px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.viewer-path {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;
+  text-align: left;
+  font-family: var(--mono);
+  font-size: 11.5px;
+}
+
+.viewer-info {
+  flex: none;
+  color: var(--faint);
+  white-space: nowrap;
+}
+
+.viewer-bar > * {
+  flex-shrink: 0;
+}
+
+.viewer-bar > .viewer-path,
+.viewer-bar > .viewer-spacer {
+  flex-shrink: 1;
+}
+
+.viewer-spacer {
+  flex: 1;
+}
+
+.viewer-bar .button {
+  height: 22px;
+  padding: 0 8px;
+  font-size: 11.5px;
+}
+
+.viewer-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  outline: none;
+  font-size: calc(13px + var(--viewer-zoom));
+  user-select: text;
+  cursor: auto;
+}
+
+.viewer-empty {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  padding: 24px;
+  color: var(--muted);
+  text-align: center;
+}
+
+.viewer-notice {
+  margin: 12px 16px 0;
+  padding: 6px 10px;
+  border-radius: var(--radius);
+  background: var(--elevated);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.viewer-notice.error {
+  color: var(--waiting);
+  background: color-mix(in srgb, var(--waiting) 10%, var(--bg));
+}
+
+/* Code and source: line numbers beside the text. */
+.viewer-code {
+  display: flex;
+  min-width: max-content;
+  padding: 10px 0;
+  font: calc(12.5px + var(--viewer-zoom)) / 1.5 var(--mono);
+}
+
+.viewer-code pre {
+  margin: 0;
+  font: inherit;
+}
+
+.viewer-gutter {
+  position: sticky;
+  left: 0;
+  flex: none;
+  padding: 0 12px 0 14px;
+  background: var(--bg);
+  color: var(--faint);
+  text-align: right;
+  user-select: none;
+}
+
+.viewer-source {
+  padding: 0 24px 0 4px;
+  tab-size: 4;
+}
+
+/* Syntax colors from the theme's ANSI colors. */
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-built_in,
+.hljs-doctag {
+  color: var(--ansi-magenta);
+}
+
+.hljs-string,
+.hljs-regexp,
+.hljs-addition,
+.hljs-template-tag {
+  color: var(--ansi-green);
+}
+
+.hljs-number,
+.hljs-literal,
+.hljs-symbol,
+.hljs-bullet,
+.hljs-attr,
+.hljs-variable.constant_ {
+  color: var(--ansi-yellow);
+}
+
+.hljs-title,
+.hljs-title.function_,
+.hljs-section,
+.hljs-name {
+  color: var(--ansi-blue);
+}
+
+.hljs-type,
+.hljs-title.class_,
+.hljs-attribute,
+.hljs-selector-class,
+.hljs-selector-id,
+.hljs-meta {
+  color: var(--ansi-cyan);
+}
+
+.hljs-comment,
+.hljs-quote {
+  color: var(--faint);
+  font-style: italic;
+}
+
+.hljs-deletion {
+  color: var(--ansi-red);
+}
+
+.hljs-emphasis {
+  font-style: italic;
+}
+
+.hljs-strong {
+  font-weight: 600;
+}
+
+/* Markdown as a readable document. */
+.viewer-markdown {
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 20px 32px 48px;
+  font: 400 calc(14px + var(--viewer-zoom)) / 1.65 var(--ui);
+}
+
+.viewer-markdown > :first-child {
+  margin-top: 0;
+}
+
+.viewer-markdown h1,
+.viewer-markdown h2,
+.viewer-markdown h3,
+.viewer-markdown h4 {
+  margin: 1.6em 0 0.6em;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.viewer-markdown h1 {
+  font-size: 1.75em;
+  padding-bottom: 0.3em;
+  border-bottom: 1px solid var(--line);
+}
+
+.viewer-markdown h2 {
+  font-size: 1.35em;
+  padding-bottom: 0.25em;
+  border-bottom: 1px solid var(--line);
+}
+
+.viewer-markdown h3 {
+  font-size: 1.15em;
+}
+
+.viewer-markdown a {
+  color: var(--link);
+  text-decoration: none;
+}
+
+.viewer-markdown a:hover {
+  text-decoration: underline;
+}
+
+.viewer-markdown code {
+  padding: 0.12em 0.35em;
+  border-radius: var(--radius);
+  background: var(--elevated);
+  font: 0.88em var(--mono);
+}
+
+.viewer-markdown pre {
+  padding: 12px 14px;
+  overflow: auto;
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  line-height: 1.5;
+}
+
+.viewer-markdown pre code {
+  padding: 0;
+  background: none;
+  font-size: 0.86em;
+}
+
+.viewer-markdown blockquote {
+  margin: 1em 0;
+  padding: 0 1em;
+  border-left: 3px solid var(--accent);
+  color: var(--muted);
+}
+
+.viewer-markdown table,
+.viewer-table table {
+  border-collapse: collapse;
+  font-size: 0.92em;
+}
+
+.viewer-markdown th,
+.viewer-markdown td {
+  padding: 6px 12px;
+  border: 1px solid var(--line-strong);
+}
+
+.viewer-markdown th {
+  background: var(--surface);
+  font-weight: 600;
+}
+
+.viewer-markdown img {
+  max-width: 100%;
+}
+
+.viewer-markdown hr {
+  border: none;
+  border-top: 1px solid var(--line);
+  margin: 2em 0;
+}
+
+.viewer-markdown input[type='checkbox'] {
+  margin: 0 0.4em 0 0;
+  accent-color: var(--accent);
+}
+
+.viewer-markdown li > p {
+  margin: 0.2em 0;
+}
+
+/* JSON and YAML as a tree. */
+.viewer-tree {
+  padding: 10px 14px 24px;
+  font: calc(12.5px + var(--viewer-zoom)) / 1.6 var(--mono);
+}
+
+.tree-row {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 0 6px;
+  border-radius: var(--radius);
+  white-space: nowrap;
+}
+
+.tree-node.container > .tree-row {
+  cursor: pointer;
+}
+
+.tree-row:hover {
+  background: var(--hover);
+}
+
+.tree-toggle {
+  flex: none;
+  width: 10px;
+  color: var(--faint);
+}
+
+.tree-node.container > .tree-row > .tree-toggle::before {
+  content: '▸';
+}
+
+.tree-node.container.open > .tree-row > .tree-toggle::before {
+  content: '▾';
+}
+
+/* The top object or list shows its entries without a row of its own. */
+.viewer-tree > .tree-node.container > .tree-row {
+  display: none;
+}
+
+.viewer-tree > .tree-node.container > .tree-children {
+  margin-left: 0;
+  padding-left: 0;
+  border-left: none;
+}
+
+.tree-children {
+  display: none;
+  margin-left: 7px;
+  padding-left: 12px;
+  border-left: 1px solid var(--line);
+}
+
+.tree-node.open > .tree-children {
+  display: block;
+}
+
+.tree-key {
+  color: var(--ansi-blue);
+}
+
+.tree-index {
+  color: var(--faint);
+}
+
+.tree-colon {
+  margin-left: -6px;
+  color: var(--faint);
+}
+
+.tree-summary {
+  color: var(--faint);
+}
+
+.tree-node.open > .tree-row > .tree-summary {
+  visibility: hidden;
+}
+
+.tree-string {
+  color: var(--ansi-green);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.tree-number {
+  color: var(--ansi-yellow);
+}
+
+.tree-boolean,
+.tree-null {
+  color: var(--ansi-magenta);
+}
+
+.tree-more {
+  margin: 2px 0 2px 22px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--link);
+  font: inherit;
+  cursor: pointer;
+}
+
+/* CSV as a table with a sticky header. */
+.viewer-table table {
+  margin: 0;
+  font: calc(12.5px + var(--viewer-zoom)) / 1.5 var(--mono);
+}
+
+.viewer-table th,
+.viewer-table td {
+  padding: 3px 12px;
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+  text-align: left;
+}
+
+.viewer-table th {
+  position: sticky;
+  top: 0;
+  background: var(--surface);
+  font-weight: 600;
+}
+
+.viewer-table td.number {
+  text-align: right;
+}
+
+.viewer-table .row-number {
+  color: var(--faint);
+  text-align: right;
+  user-select: none;
+}
+
+.viewer-table tbody tr:hover td {
+  background: var(--hover);
+}
+
+/* Images fit the viewer; a click shows the actual size. */
+.viewer-image {
+  display: grid;
+  place-items: center;
+  min-height: 100%;
+  padding: 16px;
+}
+
+.viewer-image img {
+  max-width: 100%;
+  max-height: calc(100vh - 120px);
+  cursor: zoom-in;
+  background: repeating-conic-gradient(var(--surface) 0 25%, var(--elevated) 0 50%) 0 0 / 16px 16px;
+}
+
+.viewer-image.actual {
+  place-items: start;
+}
+
+.viewer-image.actual img {
+  max-width: none;
+  max-height: none;
+  cursor: zoom-out;
+}
+
+/* HTML pages fill the viewer. */
+.viewer-body:has(> .viewer-frame) {
+  display: flex;
+  overflow: hidden;
+}
+
+.viewer-frame {
+  flex: 1;
+  border: none;
+  background: #fff;
+}

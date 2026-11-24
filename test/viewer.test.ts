@@ -1,0 +1,185 @@
+import { describe, expect, it } from 'vitest';
+import { insertRestored, restoreGroup, snapshotGroup } from '../src/daemon/closed-groups';
+import { ownedFileName } from '../src/daemon/viewers';
+import { applyAction, showViewer, splitSide } from '../src/daemon/workspace';
+import { handleMcp } from '../src/cli/mcp';
+import { commandEnv } from '../src/daemon/senju-command';
+import { panes, tabIds } from '../src/shared/layout';
+import { emptyState, type AppState, type ViewerState } from '../src/shared/types';
+import { extensionFor, viewerFormat, viewerLabel } from '../src/shared/viewer';
+import { parseCsv, parseJson, parseYaml } from '../src/renderer/viewer-parse';
+
+const W = 'win';
+
+function setup() {
+  const state: AppState = { ...emptyState(), windows: [{ id: W, activeWorkspaceId: null, ui: {} }] };
+  const { created } = applyAction(state, { type: 'createGroup', windowId: W, name: 'g', cwd: '/tmp' }, '/home/u');
+  const workspace = state.groups[0].workspaces[0];
+  return { state, workspace, terminal: created[0], paneId: workspace.focusedPaneId };
+}
+
+const viewer = (id: string, file: string, extra: Partial<ViewerState> = {}): ViewerState => ({ id, file, ...extra });
+
+describe('viewer formats', () => {
+  it('tells the format by the extension', () => {
+    expect(viewerFormat('/r/report.md').kind).toBe('markdown');
+    expect(viewerFormat('/r/data.JSON').kind).toBe('json');
+    expect(viewerFormat('/r/ci.yml').kind).toBe('yaml');
+    expect(viewerFormat('/r/t.tsv')).toEqual({ kind: 'csv', separator: '\t' });
+    expect(viewerFormat('/r/shot.png').kind).toBe('image');
+    expect(viewerFormat('/r/main.rs')).toEqual({ kind: 'code', language: 'rust' });
+    expect(viewerFormat('/r/Dockerfile')).toEqual({ kind: 'code', language: 'dockerfile' });
+    expect(viewerFormat('/r/notes')).toEqual({ kind: 'text' });
+  });
+
+  it('takes the format asked for, by name, language or extension', () => {
+    expect(viewerFormat('/r/out.txt', 'markdown').kind).toBe('markdown');
+    expect(viewerFormat('/r/out.txt', 'python')).toEqual({ kind: 'code', language: 'python' });
+    expect(viewerFormat('/r/out.txt', 'py')).toEqual({ kind: 'code', language: 'python' });
+    expect(viewerFormat('/r/page.html', 'nonsense').kind).toBe('html');
+    expect(viewerFormat('/r/x.ts', 'code')).toEqual({ kind: 'code', language: 'typescript' });
+  });
+
+  it('names files of content by its format', () => {
+    expect(extensionFor('markdown')).toBe('markdown');
+    expect(extensionFor('python')).toBe('py');
+    expect(extensionFor(undefined)).toBe('txt');
+    expect(ownedFileName('Test report', 'markdown')).toBe('Test report.markdown');
+    expect(ownedFileName('report.md', undefined)).toBe('report.md');
+    expect(ownedFileName('a/b:c', 'json')).toBe('abc.json');
+    expect(ownedFileName(undefined, undefined)).toBe('content.txt');
+    expect(viewerLabel({ file: '/x/y/report.md' })).toBe('report.md');
+  });
+});
+
+describe('parsing', () => {
+  it('reads JSON with comments and trailing commas', () => {
+    expect(parseJson('{"a": [1, 2]}')).toEqual({ a: [1, 2] });
+    expect(parseJson('{\n  // note\n  "url": "http://x//y", /* c */ "b": [1,],\n}')).toEqual({ url: 'http://x//y', b: [1] });
+    expect(() => parseJson('{"a": }')).toThrow();
+  });
+
+  it('reads YAML, several documents as a list', () => {
+    expect(parseYaml('a: 1\nb: [x, y]\n')).toEqual({ a: 1, b: ['x', 'y'] });
+    expect(parseYaml('a: 1\n---\nb: 2\n')).toEqual([{ a: 1 }, { b: 2 }]);
+    expect(() => parseYaml('a: [1\n')).toThrow();
+  });
+
+  it('reads CSV with quoted fields', () => {
+    expect(parseCsv('a,b\n1,"x, ""y"""\r\n2,\n', ',')).toEqual([['a', 'b'], ['1', 'x, "y"'], ['2', '']]);
+    expect(parseCsv('a\tb\n1\t2', '\t')).toEqual([['a', 'b'], ['1', '2']]);
+  });
+});
+
+describe('showing viewers', () => {
+  it('opens a viewer in a new pane beside the terminal and keeps the focus', () => {
+    const { state, workspace, terminal, paneId } = setup();
+    expect(showViewer(state, terminal, viewer('v1', '/r/a.md'))).toBe('v1');
+    const all = panes(workspace.root);
+    expect(workspace.root.type === 'split' && workspace.root.direction).toBe('row');
+    expect(all[1].tabs).toEqual(['v1']);
+    expect(workspace.focusedPaneId).toBe(paneId);
+  });
+
+  it('adds more viewers to the viewer pane and brings an open file to the front', () => {
+    const { state, workspace, terminal } = setup();
+    showViewer(state, terminal, viewer('v1', '/r/a.md'));
+    showViewer(state, terminal, viewer('v2', '/r/b.json'));
+    expect(showViewer(state, terminal, viewer('v3', '/r/a.md', { name: 'A' }))).toBe('v1');
+    const pane = panes(workspace.root)[1];
+    expect(pane.tabs).toEqual(['v1', 'v2']);
+    expect(pane.activeTab).toBe('v1');
+    expect(state.viewers.v1.name).toBe('A');
+    expect(state.viewers.v3).toBeUndefined();
+    // Content sent without a file is always new.
+    showViewer(state, terminal, viewer('v4', '/s/viewers/v4/x.md', { owned: true }));
+    expect(panes(workspace.root)[1].tabs).toEqual(['v1', 'v4', 'v2']);
+  });
+
+  it('splits below a tall terminal', () => {
+    expect(splitSide({ id: 't', cwd: '/', cols: 160, rows: 40, env: {} })).toBe('right');
+    expect(splitSide({ id: 't', cwd: '/', cols: 60, rows: 50, env: {} })).toBe('down');
+  });
+
+  it('opens a viewer in a window of its own, out of the layout', () => {
+    const { state, workspace, terminal } = setup();
+    showViewer(state, terminal, viewer('v1', '/r/a.md', { window: true }));
+    expect(tabIds(workspace.root)).toEqual([terminal]);
+    expect(state.viewers.v1.window).toBe(true);
+    expect(showViewer(state, 'missing', viewer('v2', '/r/b.md'))).toBeNull();
+  });
+
+  it('closes, renames, zooms and pops out viewers like tabs', () => {
+    const { state, workspace, terminal } = setup();
+    showViewer(state, terminal, viewer('v1', '/r/a.md'));
+    showViewer(state, terminal, viewer('v2', '/r/b.md'));
+    applyAction(state, { type: 'renameTab', terminalId: 'v1', name: 'Report' }, '/');
+    applyAction(state, { type: 'zoomTab', terminalId: 'v1', zoom: 2 }, '/');
+    expect(state.viewers.v1).toMatchObject({ name: 'Report', zoom: 2 });
+    applyAction(state, { type: 'popOutViewer', viewerId: 'v2' }, '/');
+    expect(state.viewers.v2.window).toBe(true);
+    expect(tabIds(workspace.root)).toEqual([terminal, 'v1']);
+    expect(applyAction(state, { type: 'closeViewer', viewerId: 'v2' }, '/').removed).toEqual(['v2']);
+    expect(applyAction(state, { type: 'closeTab', terminalId: 'v1' }, '/').removed).toEqual(['v1']);
+    expect(state.viewers).toEqual({});
+    expect(workspace.root.type).toBe('pane');
+  });
+
+  it('opens a file the user picked in the pane, focused', () => {
+    const { state, workspace, paneId, terminal } = setup();
+    applyAction(state, { type: 'openViewer', paneId, file: '/r/a.md' }, '/');
+    const pane = panes(workspace.root)[0];
+    expect(pane.tabs.length).toBe(2);
+    expect(state.viewers[pane.activeTab].file).toBe('/r/a.md');
+    // A new terminal next to a viewer starts in the folder of the pane's terminal.
+    applyAction(state, { type: 'createTab', paneId }, '/');
+    const created = panes(workspace.root)[0].activeTab;
+    expect(state.terminals[created].cwd).toBe(state.terminals[terminal].cwd);
+  });
+
+  it('keeps viewers and the content Senju kept with a closed group', () => {
+    const { state, terminal } = setup();
+    showViewer(state, terminal, viewer('v1', '/r/a.md'));
+    showViewer(state, terminal, viewer('v2', '/s/viewers/v2/x.md', { owned: true }));
+    const saved = snapshotGroup(state, state.groups[0].id, {}, 1, { v2: '# kept' })!;
+    expect(Object.keys(saved.viewers!)).toEqual(['v1', 'v2']);
+    expect(saved.terminals.v1).toBeUndefined();
+    const restored = restoreGroup(saved);
+    const ids = Object.keys(restored.viewers);
+    expect(ids).toHaveLength(2);
+    expect(ids).not.toContain('v1');
+    expect(Object.values(restored.viewerContent)).toEqual(['# kept']);
+    const fresh: AppState = { ...emptyState(), windows: [{ id: W, activeWorkspaceId: null, ui: {} }] };
+    insertRestored(fresh, restored, 0, W);
+    expect(Object.keys(fresh.viewers)).toEqual(ids);
+    expect(Object.keys(fresh.terminals)).toHaveLength(1);
+  });
+});
+
+describe('the senju command', () => {
+  it('comes first in PATH once', () => {
+    const env = commandEnv('/run/senju/bin', '/run/senju/daemon.sock', { PATH: '/run/senju/bin:/usr/bin' });
+    expect(env).toEqual({ PATH: '/run/senju/bin:/usr/bin', SENJU_SOCKET: '/run/senju/daemon.sock' });
+  });
+
+  it('serves the MCP tools', async () => {
+    const shown: unknown[] = [];
+    const show = async (request: unknown) => {
+      shown.push(request);
+      return 'ok';
+    };
+    const init = (await handleMcp({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-03-26' } }, show, '1')) as { result: { protocolVersion: string } };
+    expect(init.result.protocolVersion).toBe('2025-03-26');
+    expect(await handleMcp({ jsonrpc: '2.0', method: 'notifications/initialized' }, show, '1')).toBeNull();
+    const call = (await handleMcp({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'show_file', arguments: { path: 'a.md', window: true } } }, show, '1')) as {
+      result: { isError?: boolean };
+    };
+    expect(call.result.isError).toBeUndefined();
+    expect(shown).toEqual([{ file: 'a.md', format: undefined, name: undefined, window: true }]);
+    const failed = (await handleMcp({ jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'show_content', arguments: { content: 'x' } } }, async () => {
+      throw new Error('Run senju in a terminal of Senju.');
+    }, '1')) as { result: { isError: boolean; content: { text: string }[] } };
+    expect(failed.result).toMatchObject({ isError: true, content: [{ text: 'Run senju in a terminal of Senju.' }] });
+    expect(await handleMcp({ jsonrpc: '2.0', id: 4, method: 'resources/list' }, show, '1')).toMatchObject({ error: { code: -32601 } });
+  });
+});

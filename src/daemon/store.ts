@@ -43,6 +43,7 @@ function migrateV2(old: V2State): AppState {
     groups: old.groups.map((g) => ({ ...g, windowId })),
     windows: [{ id: windowId, activeWorkspaceId: old.activeWorkspaceId ?? null, ui: old.ui ?? {} }],
     terminals: old.terminals ?? {},
+    viewers: {},
   };
 }
 
@@ -78,6 +79,18 @@ function migrateV1(old: V1State): V2State {
 
 export function scrollbackDir(stateFile: string): string {
   return path.join(path.dirname(stateFile), 'scrollback');
+}
+
+/** Where Senju keeps the content an agent sent to a viewer without a file of its own. */
+export function viewerDir(stateFile: string, viewerId: string): string {
+  return path.join(path.dirname(stateFile), 'viewers', viewerId.replace(/[^\w-]/g, ''));
+}
+
+/** Removes the folders of viewers that no longer exist. */
+export async function pruneViewers(stateFile: string, keep: Set<string>): Promise<void> {
+  const dir = path.join(path.dirname(stateFile), 'viewers');
+  const names = await fs.promises.readdir(dir).catch(() => [] as string[]);
+  await Promise.all(names.filter((n) => !keep.has(n)).map((n) => fs.promises.rm(path.join(dir, n), { recursive: true, force: true })));
 }
 
 const scrollbackFile = (stateFile: string, terminalId: string) => path.join(scrollbackDir(stateFile), `${terminalId.replace(/[^\w-]/g, '')}.ansi`);

@@ -3,21 +3,26 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import type { AppState, ClosedGroupInfo, GroupState, LayoutNode, SavedGroup, TerminalState } from '../shared/types';
-import { terminalIds } from '../shared/layout';
+import type { AppState, ClosedGroupInfo, GroupState, LayoutNode, SavedGroup, TerminalState, ViewerState } from '../shared/types';
+import { tabIds } from '../shared/layout';
 import { newId, repairWindows, windowOf } from './workspace';
 
-/** Everything about a group needed to open it again; `scrollback` by terminal id. */
-export function snapshotGroup(state: AppState, groupId: string, scrollback: Record<string, string>, now: number): SavedGroup | null {
+/**
+ * Everything about a group needed to open it again; `scrollback` by terminal
+ * id, `viewerContent` the content of the viewers Senju keeps the file of.
+ */
+export function snapshotGroup(state: AppState, groupId: string, scrollback: Record<string, string>, now: number, viewerContent: Record<string, string> = {}): SavedGroup | null {
   const index = state.groups.findIndex((g) => g.id === groupId);
   const group = state.groups[index];
   if (!group) return null;
   const terminals: Record<string, TerminalState> = {};
+  const viewers: Record<string, ViewerState> = {};
   for (const workspace of group.workspaces) {
-    for (const id of terminalIds(workspace.root)) {
+    for (const id of tabIds(workspace.root)) {
       const terminal = state.terminals[id];
       // The agent's state describes the running process, which a restore replaces.
       if (terminal) terminals[id] = { ...structuredClone(terminal), agent: undefined, busy: undefined };
+      else if (state.viewers[id]) viewers[id] = structuredClone(state.viewers[id]);
     }
   }
   const shown = state.windows.find((w) => w.id === group.windowId)?.activeWorkspaceId ?? null;
@@ -31,6 +36,8 @@ export function snapshotGroup(state: AppState, groupId: string, scrollback: Reco
     group: structuredClone(group),
     terminals,
     scrollback: Object.fromEntries(Object.keys(terminals).flatMap((id) => (scrollback[id] ? [[id, scrollback[id]]] : []))),
+    viewers,
+    viewerContent: Object.fromEntries(Object.keys(viewers).flatMap((id) => (viewers[id].owned && viewerContent[id] !== undefined ? [[id, viewerContent[id]]] : []))),
   };
 }
 
@@ -38,6 +45,9 @@ export interface RestoredGroup {
   group: GroupState;
   terminals: Record<string, TerminalState>;
   scrollback: Record<string, string>;
+  /** Viewers Senju keeps the file of still name the old one; their content is in `viewerContent`, by new id. */
+  viewers: Record<string, ViewerState>;
+  viewerContent: Record<string, string>;
   activeWorkspaceId: string | null;
 }
 
@@ -60,15 +70,23 @@ export function restoreGroup(saved: SavedGroup): RestoredGroup {
   };
   const terminals: Record<string, TerminalState> = {};
   const scrollback: Record<string, string> = {};
+  const viewers: Record<string, ViewerState> = {};
+  const viewerContent: Record<string, string> = {};
   for (const workspace of saved.group.workspaces) {
-    for (const old of terminalIds(workspace.root)) {
+    for (const old of tabIds(workspace.root)) {
       const id = fresh(old);
+      const viewer = saved.viewers?.[old];
+      if (viewer) {
+        viewers[id] = { ...viewer, id, window: undefined };
+        if (viewer.owned) viewerContent[id] = saved.viewerContent?.[old] ?? '';
+        continue;
+      }
       terminals[id] = { ...(saved.terminals[old] ?? { cwd: group.cwd, cols: 80, rows: 24, env: {} }), id };
       if (saved.scrollback[old]) scrollback[id] = saved.scrollback[old];
     }
   }
   const active = saved.activeWorkspaceId ? ids.get(saved.activeWorkspaceId) : undefined;
-  return { group, terminals, scrollback, activeWorkspaceId: active ?? group.workspaces[0]?.id ?? null };
+  return { group, terminals, scrollback, viewers, viewerContent, activeWorkspaceId: active ?? group.workspaces[0]?.id ?? null };
 }
 
 /** Puts a restored group at its old place among the groups and shows it in a window. */
@@ -77,6 +95,7 @@ export function insertRestored(state: AppState, restored: RestoredGroup, index: 
   restored.group.windowId = (state.windows.find((w) => w.id === windowId) ?? state.windows[0]).id;
   state.groups.splice(Math.max(0, Math.min(index, state.groups.length)), 0, restored.group);
   Object.assign(state.terminals, restored.terminals);
+  Object.assign(state.viewers, restored.viewers);
   if (restored.activeWorkspaceId) windowOf(state, restored.group).activeWorkspaceId = restored.activeWorkspaceId;
 }
 

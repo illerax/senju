@@ -2,9 +2,9 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { applyAction, closeTerminal, findPane } from '../src/daemon/workspace';
+import { applyAction, closeTab, findPane } from '../src/daemon/workspace';
 import { loadState } from '../src/daemon/store';
-import { findPaneNode, panes, terminalIds } from '../src/shared/layout';
+import { findPaneNode, panes, tabIds } from '../src/shared/layout';
 import { emptyState, type AppState } from '../src/shared/types';
 
 const W = 'win';
@@ -30,7 +30,7 @@ describe('groups and workspaces', () => {
   it('creates a group with one workspace, pane and tab', () => {
     const { state, workspace, first } = setup();
     expect(active(state)).toBe(workspace.id);
-    expect(terminalIds(workspace.root)).toEqual([first]);
+    expect(tabIds(workspace.root)).toEqual([first]);
     expect(state.terminals[first].cwd).toBe('/tmp');
   });
 
@@ -64,7 +64,7 @@ describe('groups and workspaces', () => {
     applyAction(state, { type: 'activateWorkspace', workspaceId: group.workspaces[0].id }, '/');
     applyAction(state, { type: 'deleteGroup', groupId: group.id }, '/');
     expect(state.groups).toEqual([other]);
-    expect(Object.keys(state.terminals)).toEqual(terminalIds(other.workspaces[0].root));
+    expect(Object.keys(state.terminals)).toEqual(tabIds(other.workspaces[0].root));
     expect(active(state)).toBe(other.workspaces[0].id);
   });
 });
@@ -102,7 +102,7 @@ describe('panes and tabs', () => {
   it('closing the last terminal closes the workspace', () => {
     const { state, group, first } = setup();
     const effects = { created: [], removed: [] as string[] };
-    closeTerminal(state, first, effects);
+    closeTab(state, first, effects);
     expect(effects.removed).toEqual([first]);
     expect(group.workspaces).toHaveLength(0);
     expect(active(state)).toBeNull();
@@ -243,7 +243,7 @@ describe('loadState', () => {
     expect(state.groups[0].windowId).toBe(state.windows[0].id);
     expect(state.windows[0].activeWorkspaceId).toBe('w');
     const workspace = state.groups[0].workspaces[0];
-    expect(terminalIds(workspace.root)).toEqual(['a', 'b']);
+    expect(tabIds(workspace.root)).toEqual(['a', 'b']);
     expect(findPaneNode(workspace.root, workspace.focusedPaneId)?.tabs).toEqual(['b']);
     expect(Object.keys(state.terminals)).toEqual(['a', 'b']);
   });

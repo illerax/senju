@@ -30,7 +30,7 @@ const report = (label, ok) => {
 function daemonSend(msg) {
   return new Promise((resolve, reject) => {
     const s = net.connect(path.join(home, 'daemon.sock'), () => {
-      s.write(`${JSON.stringify({ type: 'hello', protocol: 3 })}\n${JSON.stringify(msg)}\n`);
+      s.write(`${JSON.stringify({ type: 'hello', protocol: 4 })}\n${JSON.stringify(msg)}\n`);
       setTimeout(() => {
         s.end();
         resolve();
@@ -209,6 +209,77 @@ report(`copy mode keys never reach the shell (${JSON.stringify(await promptLine(
 await keys('Control+Shift+Space', 'Escape');
 report('copy mode exits', await page.locator('.pane.focused .copy-mode-bar').isHidden());
 
+// Viewers: files an agent shows with the senju command open next to the terminal, rendered by their format.
+const files = path.join(home, 'files');
+fs.mkdirSync(files);
+fs.writeFileSync(path.join(files, 'report.md'), '# Test report\n\nAll **42** checks passed. See [details](#details).\n\n| Suite | Passed | Time |\n| --- | ---: | ---: |\n| daemon | 61 | 48 s |\n| ui | 57 | 71 s |\n\n## Details\n\n- [x] viewers open next to the agent\n- [ ] nothing else\n\n```ts\nconst answer: number = 42;\nexport function check(ok: boolean) {\n  return ok ? "pass" : "fail";\n}\n```\n\n> Rendered by Senju.\n');
+fs.writeFileSync(path.join(files, 'data.json'), JSON.stringify({ name: 'senju', version: '0.2.0', features: ['viewers', 'mcp', 'copy mode'], agents: { claude: { hooks: true, mcp: true }, codex: { hooks: false, mcp: false } }, nothing: null, count: 3 }, null, 2));
+fs.writeFileSync(path.join(files, 'agents.csv'), 'agent,state,context\nclaude,working,42%\ncodex,waiting,"18%"\ngemini,done,7%\n');
+fs.writeFileSync(path.join(files, 'page.html'), '<!doctype html><html><body style="font:16px sans-serif"><h1 id="t">static</h1><script>document.getElementById("t").textContent = "made by script"; fetch("https://example.com/").then(() => (document.title = "net"), () => document.body.append("offline"));</script></body></html>');
+const senjuCommand = `'${path.join(home, 'bin', 'senju')}'`;
+const focusedIsTerminal = () => page.evaluate(() => !!document.activeElement?.closest('.terminal'));
+await page.keyboard.type(`clear; ${senjuCommand} open '${path.join(files, 'report.md')}'\n`);
+await page.locator('.viewer-markdown h1', { hasText: 'Test report' }).waitFor({ timeout: 15000 }).catch(() => {});
+report('senju open shows Markdown in a viewer tab', await page.locator('.viewer-markdown h1', { hasText: 'Test report' }).isVisible());
+report('code in Markdown is highlighted', (await page.locator('.viewer-markdown pre .hljs-keyword').count()) > 0);
+report('the terminal keeps the focus', await focusedIsTerminal());
+await shot('2h-viewer-markdown.png');
+fs.appendFileSync(path.join(files, 'report.md'), '\n## Added later\n');
+await page.locator('.viewer-markdown h2', { hasText: 'Added later' }).waitFor({ timeout: 5000 }).catch(() => {});
+report('a viewer reloads when its file changes', await page.locator('.viewer-markdown h2', { hasText: 'Added later' }).isVisible());
+await page.locator('.viewer-mode', { hasText: 'Source' }).click();
+report('a viewer shows the source', await page.locator('.viewer-source').filter({ hasText: '# Test report' }).isVisible());
+await page.locator('.viewer-mode', { hasText: 'Rendered' }).click();
+await page.locator('.pane .terminal').first().click();
+await page.keyboard.type(`${senjuCommand} open '${path.join(files, 'data.json')}' '${path.join(files, 'agents.csv')}' '${path.join(files, 'page.html')}' && clear\n`);
+await page.waitForFunction(() => document.querySelectorAll('.tab .tab-mark.file').length === 4, null, { timeout: 15000 }).catch(() => {});
+report('more files open as tabs of the same viewer pane', (await page.locator('.tab .tab-mark.file').count()) === 4 && (await page.locator('.pane:has(.viewer)').count()) === 1);
+await page.locator('.tab', { hasText: 'data.json' }).click();
+await page.locator('.viewer-tree').waitFor();
+report('JSON shows as a tree', await page.locator('.tree-key', { hasText: 'features' }).isVisible());
+report('deeper tree nodes start closed', (await page.locator('.tree-key', { hasText: 'hooks' }).count()) === 0);
+await page.locator('.tree-row', { hasText: 'codex' }).click();
+report('a tree node opens on a click', await page.locator('.tree-key', { hasText: 'hooks' }).isVisible());
+await shot('2i-viewer-json.png');
+await page.locator('.tab', { hasText: 'agents.csv' }).click();
+await page.locator('.viewer-table td', { hasText: 'gemini' }).waitFor();
+report('CSV shows as a table', (await page.locator('.viewer-table tbody tr').count()) === 3 && (await page.locator('.viewer-table td', { hasText: '18%' }).count()) === 1);
+await shot('2j-viewer-table.png');
+await page.locator('.tab', { hasText: 'page.html' }).click();
+await page.locator('.viewer-frame').waitFor();
+const htmlFrame = async () => page.frames().find((f) => f.url().startsWith('senju-view:'));
+await page.waitForFunction(() => true);
+let frameText = '';
+for (let i = 0; i < 20 && !frameText.includes('offline'); i++) {
+  await sleep(250);
+  frameText = (await (await htmlFrame())?.evaluate(() => document.body.textContent).catch(() => '')) ?? '';
+}
+report(`HTML runs its scripts but reaches no network (${JSON.stringify(frameText)})`, frameText.includes('made by script') && frameText.includes('offline'));
+await shot('2k-viewer-html.png');
+await app.evaluate(({ dialog }, file) => {
+  dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [file] });
+}, path.join(files, 'report.md'));
+await page.locator('.tab', { hasText: 'report.md' }).click();
+await page.keyboard.press('Control+Shift+P');
+await page.waitForFunction(() => document.querySelectorAll('.tab .tab-mark.file').length === 5, null, { timeout: 5000 }).catch(() => {});
+report('Open File opens a file the user picks in a viewer tab', (await page.locator('.tab .tab-mark.file').count()) === 5);
+const popped = app.waitForEvent('window', { timeout: 10000 }).catch(() => null);
+await page.locator('.pane:has(.viewer) .viewer-bar .icon-button').click();
+const viewerPage = await popped;
+await viewerPage?.locator('.viewer-markdown h1').waitFor({ timeout: 10000 }).catch(() => {});
+report('a viewer opens in a window of its own', !!viewerPage && (await viewerPage.locator('.viewer-markdown h1', { hasText: 'Test report' }).isVisible()) && (await page.locator('.tab .tab-mark.file').count()) === 4);
+await viewerPage?.screenshot({ path: path.join(out, '2l-viewer-window.png') }).catch(() => {});
+const viewerWindowClosed = new Promise((r) => viewerPage?.once('close', r));
+await viewerPage?.keyboard.press('Control+W').catch(() => {});
+await viewerWindowClosed;
+await sleep(500);
+const viewersLeft = Object.values((await state()).viewers);
+report(`closing its window closes the viewer (${viewersLeft.length} left)`, viewersLeft.length === 4 && !viewersLeft.some((v) => v.window));
+for (const id of Object.keys((await state()).viewers)) await daemonSend({ type: 'action', action: { type: 'closeTab', terminalId: id } });
+await page.waitForFunction(() => !document.querySelector('.viewer'), null, { timeout: 5000 }).catch(() => {});
+report('closing the viewer tabs closes their pane', (await page.locator('.viewer').count()) === 0);
+await page.locator('.pane.focused .xterm').click();
+
 // Workspace shortcuts go across groups.
 st = await state();
 const moving = st.windows[0].activeWorkspaceId;
@@ -294,7 +365,11 @@ try {
 await quit(app);
 await sleep(500);
 app = await launch();
-page = await app.firstWindow();
+// Both windows open; either may be first.
+await app.firstWindow();
+for (let until = Date.now() + 5000; app.windows().length < 2 && Date.now() < until; ) await sleep(100);
+const firstId = (await (await app.firstWindow()).evaluate(() => window.senju.state())).windows[0].id;
+page = app.windows().find((w) => w.url().includes(`window=${firstId}`)) ?? (await app.firstWindow());
 await page.waitForSelector('.pane .xterm');
 await sleep(1500);
 await shot('3-reopened.png');

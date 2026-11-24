@@ -54,7 +54,7 @@ socket.on('data', (chunk) => {
   }
 });
 const send = (msg) => socket.write(`${JSON.stringify(msg)}\n`);
-send({ type: 'hello', protocol: 3 });
+send({ type: 'hello', protocol: 4 });
 send({ type: 'action', action: { type: 'createGroup', name: 'share', cwd: home } });
 while (!state?.groups.length) await sleep(50);
 const rootPane = state.groups[0].workspaces[0].root;
@@ -100,6 +100,18 @@ const prober = (async () => {
   }
 })();
 
+// A viewer of a file on the share, read as often as windows read it, more than once at a time.
+// The share holds no files, so an answer says the file does not exist.
+send({ type: 'show', protocol: 4, terminalId: probe, file: path.join(project, 'report.md') });
+while (!Object.keys(state.viewers ?? {}).length) await sleep(50);
+const viewer = Object.keys(state.viewers)[0];
+const viewerReads = [];
+listeners.add((msg) => msg.type === 'viewer' && viewerReads.push(msg));
+const reader = setInterval(() => {
+  send({ type: 'readViewer', viewerId: viewer });
+  send({ type: 'readViewer', viewerId: viewer });
+}, 300);
+
 /** What a user does in the terminal on the share: opens a tab there and starts a program. */
 const work = () => {
   send({ type: 'action', action: { type: 'createTab', paneId: sharePane } });
@@ -119,9 +131,12 @@ work();
 await sleep(10000);
 setMode('online');
 phase = 'share back online';
+const readsBefore = viewerReads.length;
 await sleep(4000);
 probing = false;
 await prober;
+clearInterval(reader);
+const viewerBack = viewerReads.slice(readsBefore).some((m) => m.content?.error?.includes('does not exist'));
 
 const phases = [...new Set(samples.map((s) => s.phase))];
 for (const p of phases) {
@@ -136,7 +151,8 @@ const check = (ok, label) => {
 };
 const slowest = Math.max(...samples.map((s) => s.ms));
 check(slowest < 200, `typing never stalled (slowest echo ${slowest}ms)`);
-const tabs = state.groups[0].workspaces[0].root.children[1].tabs;
+check(viewerBack, 'a viewer of a file on the share is answered again once the share is back');
+const tabs = state.groups[0].workspaces[0].root.children.find((p) => p.id === sharePane).tabs;
 check(tabs.slice(1).every((id) => state.terminals[id].cwd === project), 'tabs opened while the share was slow or down start in its folder');
 
 // A folder that is gone: the new tab starts in the home folder.

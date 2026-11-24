@@ -33,14 +33,21 @@ const EVENTS = [
 const HOOK_COMMAND =
   '[ -d "$SENJU_EVENTS" ] || exit 0; f=$(mktemp "$SENJU_EVENTS/.$SENJU_TERMINAL_ID.XXXXXX") || exit 0; cat > "$f" && mv "$f" "$SENJU_EVENTS/${f##*/.}.json"; exit 0';
 
-/** Writes the plugin with the hooks; Claude Code loads it from CLAUDE_CODE_PLUGIN_DIRS. */
-export async function writeHookPlugin(dir: string): Promise<void> {
+/**
+ * Writes the plugin with the hooks, and with the MCP server that shows files
+ * in Senju's viewers (senju-command.ts); Claude Code loads it from
+ * CLAUDE_CODE_PLUGIN_DIRS.
+ */
+export async function writeHookPlugin(dir: string, mcp?: { command: string; args: string[]; env: Record<string, string> }): Promise<void> {
   const hooks = Object.fromEntries(EVENTS.map((event) => [event, [{ hooks: [{ type: 'command', command: HOOK_COMMAND }] }]]));
   await fs.promises.mkdir(path.join(dir, '.claude-plugin'), { recursive: true });
   await fs.promises.mkdir(path.join(dir, 'hooks'), { recursive: true });
-  const manifest = { name: 'senju', version: '1.0.0', description: 'Reports agent status to the Senju terminal' };
+  const manifest = { name: 'senju', version: '1.1.0', description: 'Reports agent status to the Senju terminal and shows files in its viewers' };
   await fs.promises.writeFile(path.join(dir, '.claude-plugin', 'plugin.json'), `${JSON.stringify(manifest, null, 2)}\n`);
   await fs.promises.writeFile(path.join(dir, 'hooks', 'hooks.json'), `${JSON.stringify({ hooks }, null, 2)}\n`);
+  const servers = path.join(dir, '.mcp.json');
+  if (mcp) await fs.promises.writeFile(servers, `${JSON.stringify({ mcpServers: { senju: mcp } }, null, 2)}\n`);
+  else await fs.promises.rm(servers, { force: true });
 }
 
 /** Variables that let Claude Code in a terminal report to the daemon, keeping plugin directories the user set. */

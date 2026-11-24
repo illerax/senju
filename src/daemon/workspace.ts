@@ -1,13 +1,15 @@
 // Applies UI actions to the workspace structure. Process side effects are
-// reported back to the caller as lists of created and removed terminals.
+// reported back to the caller as lists of created terminals and removed tabs.
 
 import crypto from 'node:crypto';
 import type { Action } from '../shared/protocol';
-import type { AppState, GroupState, PaneNode, TerminalState, WindowState, WorkspaceState } from '../shared/types';
-import { findPaneNode, paneIds, paneOfTerminal, panes, removePane, setSplitSizes, splitPane, terminalIds, updatePane } from '../shared/layout';
+import type { AppState, GroupState, PaneNode, TerminalState, ViewerState, WindowState, WorkspaceState } from '../shared/types';
+import { findPaneNode, paneIds, paneOfTab, panes, removePane, setSplitSizes, splitPane, tabIds, updatePane } from '../shared/layout';
 
 export interface Effects {
+  /** Terminals to start. */
   created: string[];
+  /** Terminals and viewers that are gone. */
   removed: string[];
 }
 
@@ -67,24 +69,30 @@ export function findPane(state: AppState, paneId: string): { group: GroupState; 
   return null;
 }
 
-export function findTerminal(state: AppState, terminalId: string): { group: GroupState; workspace: WorkspaceState; pane: PaneNode } | null {
+/** Where a terminal's or a viewer's tab is. */
+export function findTab(state: AppState, tabId: string): { group: GroupState; workspace: WorkspaceState; pane: PaneNode } | null {
   for (const group of state.groups) {
     for (const workspace of group.workspaces) {
-      const pane = paneOfTerminal(workspace.root, terminalId);
+      const pane = paneOfTab(workspace.root, tabId);
       if (pane) return { group, workspace, pane };
     }
   }
   return null;
 }
 
-/** Working directory for a new terminal next to the given pane. */
+/** Working directory for a new terminal next to the given pane: its active terminal's, or another of its terminals'. */
 function cwdOf(state: AppState, pane: PaneNode | null | undefined, fallback: string): string {
-  return (pane && state.terminals[pane.activeTab]?.cwd) || fallback;
+  if (!pane) return fallback;
+  return [pane.activeTab, ...pane.tabs].map((id) => state.terminals[id]?.cwd).find(Boolean) || fallback;
 }
 
-function dropTerminals(state: AppState, ids: string[], effects: Effects): void {
+const isTab = (state: AppState, id: string) => !!state.terminals[id] || !!state.viewers[id];
+
+/** Forgets terminals and viewers. */
+function dropTabs(state: AppState, ids: string[], effects: Effects): void {
   for (const id of ids) {
     delete state.terminals[id];
+    delete state.viewers[id];
     effects.removed.push(id);
   }
 }
@@ -136,7 +144,7 @@ function detachWorkspace(group: GroupState, workspace: WorkspaceState): void {
 
 function removeWorkspace(state: AppState, group: GroupState, workspace: WorkspaceState, effects: Effects): void {
   detachWorkspace(group, workspace);
-  dropTerminals(state, terminalIds(workspace.root), effects);
+  dropTabs(state, tabIds(workspace.root), effects);
 }
 
 /** Takes a pane out of its workspace, closing the workspace when it was the last pane. Its terminals are kept. */
@@ -154,9 +162,9 @@ function takePane(group: GroupState, workspace: WorkspaceState, paneId: string):
   }
 }
 
-/** Takes a tab out of its pane, closing the pane when it was the last tab. The terminal is kept. */
+/** Takes a tab out of its pane, closing the pane when it was the last tab. Its terminal or viewer is kept. */
 function takeTab(state: AppState, terminalId: string): void {
-  const found = findTerminal(state, terminalId);
+  const found = findTab(state, terminalId);
   if (!found) return;
   const { group, workspace, pane } = found;
   if (pane.tabs.length === 1) {
@@ -169,12 +177,67 @@ function takeTab(state: AppState, terminalId: string): void {
   workspace.root = updatePane(workspace.root, pane.id, (p) => ({ ...p, tabs, activeTab }));
 }
 
-/** Closes a terminal's tab and forgets the terminal. */
-export function closeTerminal(state: AppState, terminalId: string, effects: Effects): void {
+/** Closes a tab and forgets its terminal or viewer. */
+export function closeTab(state: AppState, tabId: string, effects: Effects): void {
   const order = allWorkspaces(state).map((w) => w.id);
-  takeTab(state, terminalId);
-  if (state.terminals[terminalId]) dropTerminals(state, [terminalId], effects);
+  takeTab(state, tabId);
+  if (isTab(state, tabId)) dropTabs(state, [tabId], effects);
   repairActive(state, order);
+}
+
+/**
+ * Shows a viewer for a terminal. A viewer of the same file in the terminal's
+ * workspace comes to the front instead of a second one; otherwise the viewer
+ * opens as a tab of another pane that shows a viewer, or in a new pane to the
+ * right of the terminal. The focus stays where it is, so typing still goes to
+ * the terminal. Returns the id of the viewer shown, or null when the terminal
+ * has no tab.
+ */
+export function showViewer(state: AppState, terminalId: string, viewer: ViewerState): string | null {
+  if (viewer.window) {
+    const same = Object.values(state.viewers).find((v) => v.window && !v.owned && !viewer.owned && v.file === viewer.file);
+    if (same) return refreshViewer(same, viewer);
+    state.viewers[viewer.id] = viewer;
+    return viewer.id;
+  }
+  const found = findTab(state, terminalId);
+  if (!found) return null;
+  const { workspace } = found;
+  const sameId = viewer.owned ? undefined : tabIds(workspace.root).find((id) => state.viewers[id] && !state.viewers[id].owned && state.viewers[id].file === viewer.file);
+  if (sameId) {
+    const pane = paneOfTab(workspace.root, sameId)!;
+    workspace.root = updatePane(workspace.root, pane.id, (p) => ({ ...p, activeTab: sameId }));
+    return refreshViewer(state.viewers[sameId], viewer);
+  }
+  state.viewers[viewer.id] = viewer;
+  const target = panes(workspace.root).find((p) => p.id !== found.pane.id && state.viewers[p.activeTab]);
+  if (target) {
+    workspace.root = updatePane(workspace.root, target.id, (p) => {
+      const tabs = [...p.tabs];
+      tabs.splice(tabs.indexOf(p.activeTab) + 1, 0, viewer.id);
+      return { ...p, tabs, activeTab: viewer.id };
+    });
+  } else {
+    const pane: PaneNode = { type: 'pane', id: newId(), tabs: [viewer.id], activeTab: viewer.id };
+    workspace.root = splitPane(workspace.root, found.pane.id, pane, splitSide(state.terminals[terminalId]), newId);
+  }
+  return viewer.id;
+}
+
+/**
+ * Where a viewer's new pane goes: right of a terminal that is wide on the
+ * screen, below one that is tall. A cell is about twice as tall as it is wide.
+ */
+export function splitSide(terminal: TerminalState | undefined): 'right' | 'down' {
+  if (!terminal?.cols || !terminal.rows) return 'right';
+  return terminal.cols / (terminal.rows * 2) >= 1 ? 'right' : 'down';
+}
+
+/** An open viewer shown again: it takes the name and format asked for this time. */
+function refreshViewer(open: ViewerState, asked: ViewerState): string {
+  if (asked.name) open.name = asked.name;
+  if (asked.format) open.format = asked.format;
+  return open.id;
 }
 
 function focus(state: AppState, group: GroupState, workspace: WorkspaceState, paneId: string): void {
@@ -183,6 +246,7 @@ function focus(state: AppState, group: GroupState, workspace: WorkspaceState, pa
 }
 
 export function applyAction(state: AppState, action: Action, home: string): Effects {
+  state.viewers ??= {};
   repairWindows(state);
   const order = allWorkspaces(state).map((w) => w.id);
   const effects = apply(state, action, home);
@@ -219,7 +283,7 @@ function apply(state: AppState, action: Action, home: string): Effects {
     case 'deleteGroup': {
       const g = group(action.groupId);
       if (!g) break;
-      for (const w of g.workspaces) dropTerminals(state, terminalIds(w.root), effects);
+      for (const w of g.workspaces) dropTabs(state, tabIds(w.root), effects);
       state.groups.splice(state.groups.indexOf(g), 1);
       break;
     }
@@ -315,7 +379,7 @@ function apply(state: AppState, action: Action, home: string): Effects {
       const found = findPane(state, action.paneId);
       if (!found) break;
       takePane(found.group, found.workspace, found.pane.id);
-      dropTerminals(state, found.pane.tabs.filter((id) => state.terminals[id]), effects);
+      dropTabs(state, found.pane.tabs.filter((id) => isTab(state, id)), effects);
       break;
     }
     case 'focusPane': {
@@ -340,28 +404,52 @@ function apply(state: AppState, action: Action, home: string): Effects {
       break;
     }
     case 'closeTab': {
-      closeTerminal(state, action.terminalId, effects);
+      closeTab(state, action.terminalId, effects);
       break;
     }
     case 'activateTab': {
-      const found = findTerminal(state, action.terminalId);
+      const found = findTab(state, action.terminalId);
       if (!found) break;
       found.workspace.root = updatePane(found.workspace.root, found.pane.id, (p) => ({ ...p, activeTab: action.terminalId }));
       focus(state, found.group, found.workspace, found.pane.id);
       break;
     }
     case 'renameTab': {
-      const terminal = state.terminals[action.terminalId];
-      if (terminal) terminal.name = action.name.trim() || undefined;
+      const tab = state.terminals[action.terminalId] ?? state.viewers[action.terminalId];
+      if (tab) tab.name = action.name.trim() || undefined;
       break;
     }
     case 'zoomTab': {
-      const terminal = state.terminals[action.terminalId];
-      if (terminal) terminal.zoom = Number.isFinite(action.zoom) && Math.round(action.zoom) ? Math.round(action.zoom) : undefined;
+      const tab = state.terminals[action.terminalId] ?? state.viewers[action.terminalId];
+      if (tab) tab.zoom = Number.isFinite(action.zoom) && Math.round(action.zoom) ? Math.round(action.zoom) : undefined;
+      break;
+    }
+    case 'openViewer': {
+      const found = findPane(state, action.paneId);
+      if (!found || !action.file) break;
+      const id = newId();
+      state.viewers[id] = { id, file: action.file };
+      found.workspace.root = updatePane(found.workspace.root, action.paneId, (p) => {
+        const tabs = [...p.tabs];
+        tabs.splice(tabs.indexOf(p.activeTab) + 1, 0, id);
+        return { ...p, tabs, activeTab: id };
+      });
+      focus(state, found.group, found.workspace, action.paneId);
+      break;
+    }
+    case 'popOutViewer': {
+      const viewer = state.viewers[action.viewerId];
+      if (!viewer || viewer.window) break;
+      takeTab(state, viewer.id);
+      viewer.window = true;
+      break;
+    }
+    case 'closeViewer': {
+      if (state.viewers[action.viewerId]?.window) dropTabs(state, [action.viewerId], effects);
       break;
     }
     case 'moveTab': {
-      const source = findTerminal(state, action.terminalId);
+      const source = findTab(state, action.terminalId);
       const target = findPane(state, action.paneId);
       if (!source || !target) break;
       if (source.pane.id === target.pane.id) {

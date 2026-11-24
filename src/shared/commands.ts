@@ -56,7 +56,8 @@ export const commands = {
 
   nextAttention: { label: 'Go to the agent waiting longest, then the next', category: 'Tabs', linux: ['Ctrl+Shift+J'], mac: ['Cmd+J'] },
   newTab: { label: 'New terminal tab', category: 'Tabs', linux: ['Ctrl+Shift+T'], mac: ['Cmd+T'] },
-  closeTab: { label: 'Close terminal tab', category: 'Tabs', linux: ['Ctrl+Shift+W'], mac: ['Cmd+W'] },
+  closeTab: { label: 'Close tab', category: 'Tabs', linux: ['Ctrl+Shift+W'], mac: ['Cmd+W'] },
+  openFile: { label: 'Open a file in a viewer tab', category: 'Tabs', linux: ['Ctrl+Shift+P'], mac: ['Cmd+O'] },
   renameTab: { label: 'Rename tab', category: 'Tabs', linux: ['Ctrl+Shift+R'], mac: ['Cmd+Shift+R'] },
   nextTab: { label: 'Next tab', category: 'Tabs', linux: ['Ctrl+Tab'], mac: ['Ctrl+Tab', 'Cmd+Shift+]'] },
   prevTab: { label: 'Previous tab', category: 'Tabs', linux: ['Ctrl+Shift+Tab'], mac: ['Ctrl+Shift+Tab', 'Cmd+Shift+['] },

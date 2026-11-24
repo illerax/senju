@@ -1,18 +1,18 @@
-import { terminalIds } from './layout';
+import { tabIds } from './layout';
 import type { AgentProfile, AgentSessionFile, AgentUsage } from './usage';
 
 // Persistent workspace state. The daemon is the single owner and writer of this
 // structure; the UI only renders it and sends actions.
 //
 // A group (a project) holds workspaces. A workspace is split into panes, and
-// each pane holds tabs, one terminal per tab.
+// each pane holds tabs. A tab is a terminal, or a viewer that shows a file.
 
 export type SplitDirection = 'row' | 'column';
 
 export interface PaneNode {
   type: 'pane';
   id: string;
-  /** Terminal ids, in tab order. */
+  /** Ids of the tabs' terminals and viewers, in tab order. */
   tabs: string[];
   activeTab: string;
 }
@@ -126,6 +126,29 @@ export interface TerminalState {
   agentSessions?: AgentSessionFile[];
 }
 
+/**
+ * A tab that shows a file rather than running a shell: a document, data or an
+ * image an agent prepared, rendered by its format and reloaded when it changes.
+ */
+export interface ViewerState {
+  id: string;
+  /** Absolute path of the file shown. */
+  file: string;
+  /**
+   * Content an agent sent rather than a file of its own: Senju keeps it in a
+   * folder of the viewer's (viewerDir) and deletes it with the viewer.
+   */
+  owned?: boolean;
+  /** Tab name set by the agent or the user; otherwise the file's name. */
+  name?: string;
+  /** Format chosen by the agent, e.g. "markdown"; otherwise from the file's extension. */
+  format?: string;
+  /** Pixels the user zoomed the viewer by. */
+  zoom?: number;
+  /** Shown in a window of its own instead of a tab. */
+  window?: boolean;
+}
+
 export interface UiState {
   bounds?: { x: number; y: number; width: number; height: number; maximized: boolean };
   sidebarHidden?: boolean;
@@ -145,6 +168,8 @@ export interface AppState {
   /** Open windows; there is always at least one. */
   windows: WindowState[];
   terminals: Record<string, TerminalState>;
+  /** Viewer tabs, and viewers shown in windows of their own. */
+  viewers: Record<string, ViewerState>;
   /** Groups closed to disk, newest first. Sent to the UI only; the daemon reads them from their files. */
   closedGroups?: ClosedGroupInfo[];
   /** Context and tokens of each running agent, by terminal id. Sent to the UI only. */
@@ -179,10 +204,14 @@ export interface SavedGroup {
   terminals: Record<string, TerminalState>;
   /** Each terminal's scrollback, as saved for restarts. */
   scrollback: Record<string, string>;
+  /** Viewers among the tabs; missing in files of older versions. */
+  viewers?: Record<string, ViewerState>;
+  /** Content of the viewers Senju keeps the file of, by viewer id. */
+  viewerContent?: Record<string, string>;
 }
 
 export function emptyState(): AppState {
-  return { version: 3, groups: [], windows: [], terminals: {} };
+  return { version: 3, groups: [], windows: [], terminals: {}, viewers: {} };
 }
 
 /** What one window shows: its groups, with its active workspace and UI state. */
@@ -198,8 +227,14 @@ export function windowView(state: AppState, windowId: string): WindowView {
   const id = window?.id ?? windowId;
   const groups = state.groups.filter((g) => g.windowId === id);
   const terminals: AppState['terminals'] = {};
+  const viewers: AppState['viewers'] = {};
   for (const group of groups) {
-    for (const workspace of group.workspaces) for (const terminalId of terminalIds(workspace.root)) if (state.terminals[terminalId]) terminals[terminalId] = state.terminals[terminalId];
+    for (const workspace of group.workspaces) {
+      for (const id of tabIds(workspace.root)) {
+        if (state.terminals[id]) terminals[id] = state.terminals[id];
+        else if (state.viewers?.[id]) viewers[id] = state.viewers[id];
+      }
+    }
   }
-  return { ...state, groups, terminals, windowId: id, activeWorkspaceId: window?.activeWorkspaceId ?? null, ui: window?.ui ?? {} };
+  return { ...state, groups, terminals, viewers, windowId: id, activeWorkspaceId: window?.activeWorkspaceId ?? null, ui: window?.ui ?? {} };
 }
