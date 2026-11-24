@@ -1,3 +1,4 @@
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { insertRestored, restoreGroup, snapshotGroup } from '../src/daemon/closed-groups';
 import { ownedFileName } from '../src/daemon/viewers';
@@ -158,8 +159,9 @@ describe('showing viewers', () => {
 
 describe('the senju command', () => {
   it('comes first in PATH once', () => {
-    const env = commandEnv('/run/senju/bin', '/run/senju/daemon.sock', { PATH: '/run/senju/bin:/usr/bin' });
-    expect(env).toEqual({ PATH: '/run/senju/bin:/usr/bin', SENJU_SOCKET: '/run/senju/daemon.sock' });
+    const list = (...dirs: string[]) => dirs.join(path.delimiter);
+    const env = commandEnv('/run/senju/bin', '/run/senju/daemon.sock', { PATH: list('/usr/bin', '/run/senju/bin', '/bin') });
+    expect(env).toEqual({ PATH: list('/run/senju/bin', '/usr/bin', '/bin'), SENJU_SOCKET: '/run/senju/daemon.sock' });
   });
 
   it('serves the MCP tools', async () => {
