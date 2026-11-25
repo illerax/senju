@@ -26,7 +26,7 @@ Close the window, crash it, update it or reboot the computer: the layout, the ta
 - Maximize a pane to read it over the whole workspace (the button in its tab bar, its context menu or the shortcut), and restore it the same way; moving the focus to another pane restores it too.
 - Colors for workspaces, drag and drop for groups, workspaces and tabs (also between panes), inline renaming.
 - Close a group you are not working on (**Close Group** in its context menu): its processes stop and it is saved to disk. Reopen it from the clock button at the top of the sidebar, and it comes back at its place with its workspaces, layout and scrollback, agents resuming their sessions as after a reboot. **Save Group As…** writes a group to a `.senju` file, and **Open Group from File…** in the same menu opens one as a new group, e.g. on another computer.
-- Several windows, each with its own groups: open an empty one with Ctrl+Shift+O (Cmd+Shift+O), or move a group to a new or another window with **Move to Window** in its context menu. Senju opens every window again with its groups, place and size. Closing a window while others are open moves its groups to the end of the window you used before it; their processes keep running.
+- Several windows, each with its own groups: open an empty one with Ctrl+Shift+O (Cmd+Shift+O), or move a group to a new or another window with **Move to Window** in its context menu. A single tab moves the same way, from the menu of its tab, or by dragging it onto a tab bar of another window; its program keeps running. Senju opens every window again with its groups, place and size. Closing a window while others are open moves its groups to the end of the window you used before it; their processes keep running.
 - A collapsible sidebar that shrinks to a rail of workspace markers.
 
 **See what your agents are doing**
@@ -41,9 +41,9 @@ Close the window, crash it, update it or reboot the computer: the layout, the ta
 
 **See what your agents made**
 
-- An agent shows you a report, a plan, data, a page or an image in a tab next to its terminal: Markdown as a document, JSON and YAML as trees you can fold, CSV as a table, HTML with its scripts running but nothing loaded from the network, images, and code highlighted by language. The tab reloads whenever the file changes, so an agent can keep improving what you look at. [How agents use it](#viewers).
+- An agent shows you a report, a plan, data, a page or an image in a tab next to its terminal: Markdown as a document, JSON and YAML as trees you can fold, CSV as a table, HTML with its scripts running but nothing loaded from the network, images, and code highlighted by language. The tab reloads whenever the file changes, so an agent can keep improving what you look at, wherever you moved the tab. [How agents use it](#viewers).
 - Claude Code gets the tools for this automatically, through Senju's MCP server in the plugin it already loads. Any other agent, and you, use the `senju` command that every terminal of Senju has: `senju open report.md`, or `… | senju show -f json`.
-- Open any file yourself with Ctrl+Shift+P (Cmd+O) or **Open File…** in a terminal's menu, and move a viewer to a window of its own with the button in its bar.
+- Open any file yourself with Ctrl+Shift+P (Cmd+O) or **Open File…** in a terminal's menu, move a viewer to a window of its own with the button in its bar, and back to its tab or to another window from there.
 
 **Never lose a session**
 
@@ -178,7 +178,7 @@ Change any of them in **Settings → Keyboard Shortcuts** (the gear at the botto
 
 ### Viewers
 
-A viewer shows a file next to the terminal it was opened from: in another pane that shows a viewer, or in a new pane to the right of the terminal (below a tall one). The focus stays in the terminal, so you can go on talking to the agent. Asking again for a file that is open brings its tab to the front.
+A viewer shows a file next to the terminal it was opened from: in another pane that shows a viewer, or in a new pane to the right of the terminal (below a tall one). The focus stays in the terminal, so you can go on talking to the agent. Asking again for a file that is open brings its tab to the front, wherever it is now.
 
 | Format | Shown as |
 | --- | --- |
@@ -189,7 +189,7 @@ A viewer shows a file next to the terminal it was opened from: in another pane t
 | PNG, JPEG, GIF, WebP, SVG… | the image, fitted; a click shows its actual size |
 | Source code, diffs, logs | text with line numbers, highlighted by language |
 
-**Source** in the viewer's bar shows the file as it is; files larger than 5 MB show their start. A viewer reloads within a second of the file changing, keeping its scroll position and the tree nodes you opened. The button at the right end of the bar moves the viewer to a window of its own; closing that window closes it.
+**Source** in the viewer's bar shows the file as it is; files larger than 5 MB show their start. A viewer reloads within a second of the file changing, keeping its scroll position and the tree nodes you opened. The button at the right end of the bar moves the viewer to a window of its own. There, the same place has a button that returns it to a tab: in the pane it came from, or next to the terminal that showed it when that pane is gone; closing the window closes the viewer. Like any tab, a viewer moves to another window with **Move to Window** in its tab's menu (or the viewer's, in its own window) or by dragging its tab. Wherever it goes, it keeps reloading its file.
 
 **Agents.** Every terminal of Senju has the `senju` command:
 
@@ -200,9 +200,9 @@ cargo test --message-format json | senju show -f json   # what is piped in
 senju open --window chart.html       # in a window of its own
 ```
 
-`--format` (`-f`) takes `markdown`, `json`, `yaml`, `html`, `csv`, `image`, `text` or a language such as `python` or `diff`; without it, the extension tells. Content that is piped in is kept by Senju until its tab is closed, and goes with a closed or exported group.
+`--format` (`-f`) takes `markdown`, `json`, `yaml`, `html`, `csv`, `image`, `text` or a language such as `python` or `diff`; without it, the extension tells. Content that is piped in is kept by Senju until its tab is closed, and goes with a closed or exported group. Content shown again with the same `--name` from the same terminal replaces what that tab shows instead of opening another, so an agent can update a report it never wrote to a file.
 
-Claude Code gets the same as MCP tools, `show_file` and `show_content`, from the plugin Senju passes to it, so asking it to "show the report in Senju" is enough. Other agents can run the command, or `senju mcp` as an MCP server over stdio: add it to the agent's MCP configuration (Codex: `codex mcp add senju -- senju mcp`), or tell it about the command in its instructions (`AGENTS.md`). The tools only work in terminals of Senju; elsewhere they say so.
+Claude Code gets the same as MCP tools, `show_file` and `show_content`, from the plugin Senju passes to it, so asking it to "show the report in Senju" is enough. Each call answers with the tab's id; passing it back as `id`, or using the same `name`, updates that tab in whatever pane or window you moved it to. Other agents can run the command, or `senju mcp` as an MCP server over stdio: add it to the agent's MCP configuration (Codex: `codex mcp add senju -- senju mcp`), or tell it about the command in its instructions (`AGENTS.md`). The tools only work in terminals of Senju; elsewhere they say so.
 
 ### Context and tokens
 

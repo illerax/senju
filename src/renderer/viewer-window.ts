@@ -1,5 +1,6 @@
 // A window of its own for one viewer (src/main/viewer-windows.ts): the viewer
-// fills it, and closing the window closes the viewer.
+// fills it, and closing the window closes the viewer. It can return to a tab
+// or move to a window of the app; the main process then closes this window.
 
 import '@fontsource/ibm-plex-sans/400.css';
 import '@fontsource/ibm-plex-sans/500.css';
@@ -13,6 +14,7 @@ import { clampZoom, resolveTheme } from '../shared/themes';
 import type { AppState } from '../shared/types';
 import { senju } from './api';
 import { showMenu } from './menu';
+import { windowChoices } from './window-choices';
 import { applyTheme } from './theme';
 import { ViewerView } from './viewer-view';
 
@@ -21,6 +23,8 @@ let settings: Settings;
 let home = '';
 let zoom = 0;
 let zoomTimer: ReturnType<typeof setTimeout> | null = null;
+/** The state of all windows, for the windows the viewer can move to. */
+let shared: AppState | null = null;
 
 const act = (action: Action) => senju.send({ type: 'action', action });
 
@@ -30,6 +34,12 @@ const view = new ViewerView(viewerId, {
   copy: (text) => senju.clipboardWrite(text),
   menu: (items, e) => showMenu(items, { x: e.clientX, y: e.clientY }),
   onZoom: (_id, steps) => setZoom(zoom + steps),
+  dock: (id) => act({ type: 'dockViewer', viewerId: id }),
+  windows: () => (shared ? windowChoices(shared) : []),
+  moveToWindow: (id, choice) => {
+    if (choice === 'window:new') senju.newWindow({ tabId: id });
+    else act({ type: 'moveTabToWindow', terminalId: id, windowId: choice.slice('window:'.length) });
+  },
   home: () => home,
 });
 
@@ -42,6 +52,7 @@ function setZoom(next: number): void {
 }
 
 function onState(state: AppState): void {
+  shared = state;
   const viewer = state.viewers?.[viewerId];
   if (!viewer) return;
   if (!zoomTimer) zoom = viewer.zoom ?? 0;

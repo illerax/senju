@@ -386,6 +386,17 @@ check(replies[1].result?.tools?.map((t) => t.name).join() === 'show_file,show_co
 check(!replies[2].result?.isError && viewerIds().some((id) => c.state.viewers[id].name === 'table'), 'an MCP tool call shows content');
 rpc(4, 'tools/call', { name: 'show_file', arguments: { path: path.join(work, 'missing.md') } });
 check(await waitFor(() => replies[3]?.result?.isError && replies[3].result.content[0].text.includes('does not exist')), 'a missing file is reported to the agent');
+const table = viewerIds().find((id) => c.state.viewers[id].name === 'table');
+c.send({ type: 'action', action: { type: 'popOutViewer', viewerId: table } });
+await waitFor(() => c.state.viewers[table]?.window);
+rpc(5, 'tools/call', { name: 'show_content', arguments: { content: 'a,b\n3,4\n', format: 'csv', name: 'table' } });
+check(await waitFor(() => replies[4]), 'the MCP server answers content shown again');
+check(
+  replies[4].result?.content?.[0]?.text?.includes(`updated in its Senju tab, id ${table}`) && c.state.viewers[table].window && fs.readFileSync(c.state.viewers[table].file, 'utf8') === 'a,b\n3,4\n',
+  'content shown again under its name replaces it where the user moved it',
+);
+c.send({ type: 'action', action: { type: 'dockViewer', viewerId: table } });
+check(await waitFor(() => !c.state.viewers[table]?.window && viewerPane()?.tabs.includes(table)), 'a viewer returns from its window to its pane');
 mcp.stdin.end();
 c.send({ type: 'action', action: { type: 'closeTab', terminalId: data } });
 check(await waitFor(() => !c.state.viewers[data] && !fs.existsSync(path.join(home, 'viewers', data))), 'closing a viewer deletes the content Senju kept');

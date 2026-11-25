@@ -6,7 +6,7 @@ import type { UsageDetails } from './usage';
 import type { ViewerContent } from './viewer';
 
 /** Bump when messages change incompatibly; a UI replaces a daemon with another version. */
-export const PROTOCOL_VERSION = 4;
+export const PROTOCOL_VERSION = 5;
 
 export type SplitSide = 'left' | 'right' | 'up' | 'down';
 
@@ -28,8 +28,8 @@ export type Action =
   | { type: 'moveGroup'; groupId: string; toIndex: number }
   /** Moves a group to the end of another window's sidebar and shows it there. */
   | { type: 'moveGroupToWindow'; groupId: string; windowId: string }
-  /** Adds a window, optionally taking a group from another window. */
-  | { type: 'createWindow'; windowId: string; groupId?: string }
+  /** Adds a window, optionally taking a group, or a tab, from another window. */
+  | { type: 'createWindow'; windowId: string; groupId?: string; tabId?: string }
   /** Removes a window; its groups move to the end of the window `into`. The last window is kept. */
   | { type: 'closeWindow'; windowId: string; into: string }
   | { type: 'setGroupCollapsed'; groupId: string; collapsed: boolean }
@@ -54,8 +54,15 @@ export type Action =
   | { type: 'moveTab'; terminalId: string; paneId: string; toIndex: number }
   /** Opens a file the user picked in a viewer tab of a pane. */
   | { type: 'openViewer'; paneId: string; file: string }
+  /**
+   * Moves a tab, or a viewer from a window of its own, to the focused pane of
+   * another window; a window without a workspace gets a group for it.
+   */
+  | { type: 'moveTabToWindow'; terminalId: string; windowId: string }
   /** Moves a viewer from its tab to a window of its own. */
   | { type: 'popOutViewer'; viewerId: string }
+  /** Moves a viewer from its window back to a tab: in the pane it came from, else next to the terminal that showed it. */
+  | { type: 'dockViewer'; viewerId: string }
   /** Closes a viewer shown in a window of its own. */
   | { type: 'closeViewer'; viewerId: string }
   | { type: 'runPending'; terminalId: string }
@@ -76,8 +83,9 @@ export type ClientMessage =
    * From the `senju` command or its MCP server in a terminal: shows a file, or
    * content without one, in a viewer next to that terminal. Answered with
    * `shown` or `error`, and sent without a hello, so it names its protocol.
+   * `id` names a viewer shown before, to update wherever it is now.
    */
-  | { type: 'show'; protocol: number; terminalId: string; file?: string; content?: string; format?: string; name?: string; window?: boolean }
+  | { type: 'show'; protocol: number; terminalId: string; file?: string; content?: string; format?: string; name?: string; window?: boolean; id?: string }
   /** Asks for a viewer's file; `known` is the mtime the window has, answered with no content when it is still current. */
   | { type: 'readViewer'; viewerId: string; known?: number }
   /** Saves state and stops the daemon together with all terminal processes; they are restored on next start. */
@@ -92,7 +100,8 @@ export type DaemonMessage =
   | { type: 'peek'; screens: Record<string, string[]> }
   /** The usage window of an agent, or null when its sessions can't be read. */
   | { type: 'usage'; terminalId: string; details: UsageDetails | null }
-  | { type: 'shown'; viewerId: string }
+  /** The viewer shown; `updated` when it was one already open, wherever the user moved it. */
+  | { type: 'shown'; viewerId: string; updated?: boolean }
   /** A viewer's file; no content when it has not changed since `known`. */
   | { type: 'viewer'; viewerId: string; content?: ViewerContent }
   | { type: 'error'; message: string };

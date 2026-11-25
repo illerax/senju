@@ -23,8 +23,8 @@ const api = {
   stopAll: () => ipcRenderer.send('stopAll'),
   /** Closes this window; a page may not close a window it did not open. */
   closeWindow: () => ipcRenderer.send('closeWindow'),
-  /** Opens a new window, empty or showing a group moved from this one. */
-  newWindow: (groupId?: string) => ipcRenderer.send('newWindow', groupId),
+  /** Opens a new window, empty or showing a group or a tab moved from this one. */
+  newWindow: (take?: { groupId?: string; tabId?: string }) => ipcRenderer.send('newWindow', take),
   daemonOutdated: () => ipcRenderer.invoke('daemonOutdated') as Promise<boolean>,
   appInfo: () =>
     ipcRenderer.invoke('appInfo') as Promise<{ version: string; build: string; electron: string; chrome: string; node: string; platform: string; daemonOutdated: boolean }>,

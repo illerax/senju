@@ -269,8 +269,20 @@ const viewerPage = await popped;
 await viewerPage?.locator('.viewer-markdown h1').waitFor({ timeout: 10000 }).catch(() => {});
 report('a viewer opens in a window of its own', !!viewerPage && (await viewerPage.locator('.viewer-markdown h1', { hasText: 'Test report' }).isVisible()) && (await page.locator('.tab .tab-mark.file').count()) === 4);
 await viewerPage?.screenshot({ path: path.join(out, '2l-viewer-window.png') }).catch(() => {});
-const viewerWindowClosed = new Promise((r) => viewerPage?.once('close', r));
-await viewerPage?.keyboard.press('Control+W').catch(() => {});
+const docked = new Promise((r) => viewerPage?.once('close', r));
+await viewerPage?.locator('.viewer-bar .icon-button[aria-label="Return to a tab"]').click();
+await docked;
+await page.waitForFunction(() => document.querySelectorAll('.tab .tab-mark.file').length === 5, null, { timeout: 5000 }).catch(() => {});
+report(
+  'a viewer returns from its window to its pane, in front',
+  (await page.locator('.pane:has(.viewer) .tab.active', { hasText: 'report.md' }).count()) === 1 && (await page.locator('.viewer-markdown h1', { hasText: 'Test report' }).isVisible()),
+);
+const poppedAgain = app.waitForEvent('window', { timeout: 10000 }).catch(() => null);
+await page.locator('.pane:has(.viewer) .viewer-bar .icon-button[aria-label="Open in a window of its own"]').click();
+const viewerPage2 = await poppedAgain;
+await viewerPage2?.locator('.viewer-markdown h1').waitFor({ timeout: 10000 }).catch(() => {});
+const viewerWindowClosed = new Promise((r) => viewerPage2?.once('close', r));
+await viewerPage2?.keyboard.press('Control+W').catch(() => {});
 await viewerWindowClosed;
 await sleep(500);
 const viewersLeft = Object.values((await state()).viewers);
@@ -345,7 +357,7 @@ await sleep(300);
 const groupNames = (p) => p.locator('.group-name').allInnerTexts();
 const movedGroup = (await state()).groups.find((g) => g.name === 'senju');
 const opened = app.waitForEvent('window');
-await page.evaluate((id) => window.senju.newWindow(id), movedGroup.id);
+await page.evaluate((groupId) => window.senju.newWindow({ groupId }), movedGroup.id);
 let page2 = await opened;
 await page2.waitForSelector('.pane .xterm');
 await sleep(1000);
@@ -360,6 +372,38 @@ report('the first window keeps its workspace', (await page.locator('#workspace')
 try {
   await page2.screenshot({ path: path.join(out, '2e-second-window.png') });
 } catch {}
+
+// A tab moves to another window from its menu, with its process and output, and comes back by a drop.
+await page2.locator('.pane.focused .pane-actions .icon-button[aria-label="New tab"]').click();
+await sleep(800);
+await page2.keyboard.type('echo moving-tab-$((6*7))\n');
+await sleep(800);
+const movingTab = (await state()).groups.find((g) => g.id === movedGroup.id).workspaces[0].root.activeTab;
+await page2.locator('.tab.active').click({ button: 'right' });
+await page2.locator('.menu-item', { hasText: 'Move to Window' }).hover();
+await page2.screenshot({ path: path.join(out, '2m-move-tab-menu.png') }).catch(() => {});
+await page2.locator('.menu-item', { hasText: 'scratch' }).click();
+// A window drawn behind another may not render until it comes forward.
+await page.bringToFront();
+await page.locator('#workspace', { hasText: 'moving-tab-42' }).waitFor({ timeout: 5000 }).catch(() => {});
+st = await state();
+const tabWindow = (s, id) => s.groups.find((g) => g.workspaces.some((w) => JSON.stringify(w.root).includes(id)))?.windowId;
+report('a tab moves to another window from its menu, with its output', tabWindow(st, movingTab) === st.windows[0].id && (await page.locator('#workspace').innerText()).includes('moving-tab-42'));
+report('the tab leaves the window it came from', !(await page2.locator('#workspace').innerText()).includes('moving-tab-$((6*7))'));
+await page2.bringToFront();
+await page2.evaluate((id) => {
+  const data = new DataTransfer();
+  data.setData('application/x-senju-tab', id);
+  const list = document.querySelector('.pane .pane-tab-list');
+  list.dispatchEvent(new DragEvent('dragover', { dataTransfer: data, bubbles: true, cancelable: true }));
+  list.dispatchEvent(new DragEvent('drop', { dataTransfer: data, bubbles: true, cancelable: true }));
+}, movingTab);
+// Its output may be gone: bash redraws its prompt over the line above when a narrow pane made the prompt wrap.
+await page2.locator('#workspace', { hasText: 'moving-tab-$((6*7))' }).waitFor({ timeout: 10000 }).catch(() => {});
+st = await state();
+report('a tab dropped on a tab bar of another window moves there', tabWindow(st, movingTab) === st.windows[1].id && (await page2.locator('#workspace').innerText()).includes('moving-tab-$((6*7))'));
+await daemonSend({ type: 'action', action: { type: 'closeTab', terminalId: movingTab } });
+await sleep(500);
 
 // Closing the UI keeps the daemon; a new UI gets everything back, every window.
 await quit(app);

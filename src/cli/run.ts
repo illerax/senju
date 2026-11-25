@@ -8,7 +8,7 @@ import net from 'node:net';
 import path from 'node:path';
 import readline from 'node:readline';
 import { PROTOCOL_VERSION, type ClientMessage, type DaemonMessage } from '../shared/protocol';
-import { handleMcp, type ShowRequest } from './mcp';
+import { handleMcp, type Shown, type ShowRequest } from './mcp';
 
 declare const __SENJU_VERSION__: string;
 
@@ -23,11 +23,12 @@ Options:
   --name, -n NAME       the tab's name
   --window, -w          open in a window of its own
 
-The tab reloads whenever the file changes.
+The tab reloads whenever the file changes. Content shown again under the same
+name replaces the tab's, wherever it was moved.
 `;
 
-/** Sends one show request to the daemon; resolves to the id of the viewer shown. */
-function show(request: ShowRequest): Promise<string> {
+/** Sends one show request to the daemon; resolves to the viewer shown. */
+function show(request: ShowRequest): Promise<Shown> {
   const socket = process.env.SENJU_SOCKET;
   const terminalId = process.env.SENJU_TERMINAL_ID;
   if (!socket || !terminalId) return Promise.reject(new Error('senju works in terminals of Senju only.'));
@@ -42,7 +43,7 @@ function show(request: ShowRequest): Promise<string> {
     const connection = net.connect(socket);
     const timer = setTimeout(() => finish(new Error('Senju did not answer.')), 10_000);
     let buffer = '';
-    const finish = (result: Error | string) => {
+    const finish = (result: Error | Shown) => {
       clearTimeout(timer);
       connection.destroy();
       if (result instanceof Error) reject(result);
@@ -63,7 +64,7 @@ function show(request: ShowRequest): Promise<string> {
         } catch {
           continue;
         }
-        if (reply.type === 'shown') finish(reply.viewerId);
+        if (reply.type === 'shown') finish({ viewerId: reply.viewerId, updated: reply.updated });
         if (reply.type === 'error') finish(new Error(reply.message));
       }
     });
@@ -113,10 +114,7 @@ function serveMcp(): void {
       reply({ jsonrpc: '2.0', id: null, error: { code: -32700, message: 'Parse error' } });
       return;
     }
-    const shown = async (request: ShowRequest) => {
-      await show(request);
-      return request.file ? `Showing ${path.resolve(request.file)} in Senju.` : 'Showing it in Senju.';
-    };
+    const shown = (request: ShowRequest) => show({ ...request, file: request.file && path.resolve(request.file) });
     void handleMcp(message, shown, __SENJU_VERSION__).then((answer) => answer && reply(answer));
   });
   lines.on('close', () => process.exit(0));

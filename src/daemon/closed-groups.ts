@@ -77,7 +77,9 @@ export function restoreGroup(saved: SavedGroup): RestoredGroup {
       const id = fresh(old);
       const viewer = saved.viewers?.[old];
       if (viewer) {
-        viewers[id] = { ...viewer, id, window: undefined };
+        // Its agent's terminal gets a new id too; one outside the group is gone.
+        const source = viewer.source && ids.get(viewer.source);
+        viewers[id] = { ...viewer, id, window: undefined, pane: undefined, source: source || undefined };
         if (viewer.owned) viewerContent[id] = saved.viewerContent?.[old] ?? '';
         continue;
       }
