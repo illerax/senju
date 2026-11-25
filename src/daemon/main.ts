@@ -19,7 +19,7 @@ import { findSessionFile, listSessions, loadRecipes, programOf, matchRecipe, req
 import { planRestore } from './restore';
 import { envDiff } from './shellquote';
 import { deleteScrollback, loadState, pruneScrollback, pruneViewers, readScrollback, saveState, saveStateAsync, viewerDir, writeScrollback, writeScrollbackSync } from './store';
-import { applyAction, closeTab, findTab, newId, repairWindows, showViewer, type Effects } from './workspace';
+import { applyAction, closeTab, findTab, newId, repairWindows, showViewer, shownBefore, type Effects } from './workspace';
 import { commandEnv, mcpServer, writeCommand } from './senju-command';
 import { ownedFileName, readViewerFile, writeOwned } from './viewers';
 import { MAX_VIEWER_BYTES, type ViewerContent } from '../shared/viewer';
@@ -472,26 +472,38 @@ class Daemon {
     const viewer: ViewerState = { id, file: '', name: text(msg.name), format: text(msg.format), window: msg.window === true || undefined };
     if (typeof msg.content === 'string') {
       if (Buffer.byteLength(msg.content) > MAX_VIEWER_BYTES) return fail(`The content is larger than ${MAX_VIEWER_BYTES / 1024 / 1024} MB.`);
-      try {
-        viewer.file = await writeOwned(viewerDir(paths.stateFile, id), ownedFileName(viewer.name, viewer.format), msg.content);
-      } catch (err) {
-        return fail(`Could not keep the content: ${(err as Error).message}`);
-      }
       viewer.owned = true;
     } else {
       const file = text(msg.file);
       if (!file || !path.isAbsolute(file)) return fail('Name the file by its absolute path.');
       viewer.file = path.normalize(file);
     }
+    let open = shownBefore(this.state, terminalId, viewer, text(msg.id));
+    if (typeof msg.content === 'string') {
+      const content = msg.content;
+      // Content sent again replaces the file of the viewer showing it.
+      const keep = (target?: ViewerState) =>
+        writeOwned(viewerDir(paths.stateFile, target?.id ?? id), target ? path.basename(target.file) : ownedFileName(viewer.name, viewer.format), content);
+      try {
+        viewer.file = await keep(open);
+        // That viewer closed while the content was written: it gets a new one.
+        if (open && !this.state.viewers[open.id]) {
+          open = undefined;
+          viewer.file = await keep();
+        }
+      } catch (err) {
+        return fail(`Could not keep the content: ${(err as Error).message}`);
+      }
+    }
     if (this.shuttingDown) return;
-    const shown = showViewer(this.state, terminalId, viewer);
+    const shown = showViewer(this.state, terminalId, viewer, open);
     if (!shown) {
       if (viewer.owned) void fs.promises.rm(viewerDir(paths.stateFile, id), { recursive: true, force: true });
       return fail('The terminal has no tab to show the file next to.');
     }
-    log(`viewer ${shown}: ${viewer.owned ? `content from ${terminalId}` : viewer.file}`);
+    log(`viewer ${shown}${open ? ' updated' : ''}: ${viewer.owned ? `content from ${terminalId}` : viewer.file}`);
     this.changed();
-    client.send({ type: 'shown', viewerId: shown });
+    client.send({ type: 'shown', viewerId: shown, updated: !!open || undefined });
   }
 
   /** Reads of viewer files in progress, so windows asking at once share one, and a file on a dead share holds one read only. */

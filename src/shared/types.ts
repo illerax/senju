@@ -147,6 +147,14 @@ export interface ViewerState {
   zoom?: number;
   /** Shown in a window of its own instead of a tab. */
   window?: boolean;
+  /**
+   * The terminal whose agent showed it: content it sends again under the same
+   * name replaces this viewer's, and a viewer returning from its window goes
+   * next to it when its old pane is gone.
+   */
+  source?: string;
+  /** In a window of its own: the pane it was taken from, where it returns. */
+  pane?: string;
 }
 
 export interface UiState {

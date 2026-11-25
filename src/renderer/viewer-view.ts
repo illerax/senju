@@ -3,6 +3,7 @@
 // again when the file changed, keeping the scroll position and the opened
 // tree nodes.
 
+import type { MenuItem } from '../shared/menu';
 import type { ViewerState } from '../shared/types';
 import { imageType, MAX_VIEWER_BYTES, viewerFormat, type ViewerContent, type ViewerFormat } from '../shared/viewer';
 import { iconButton } from './icons';
@@ -17,11 +18,16 @@ export interface ViewerHooks {
   read: (viewerId: string, known?: number) => void;
   openLink: (url: string) => void;
   copy: (text: string) => void;
-  menu: (items: { id: string; label: string; accelerator?: string; enabled?: boolean }[], e: MouseEvent) => Promise<string | null>;
+  menu: (items: MenuItem[], e: MouseEvent) => Promise<string | null>;
   onFocus?: (viewerId: string) => void;
   onZoom?: (viewerId: string, steps: number) => void;
   /** Moves the viewer to a window of its own; missing in that window. */
   popOut?: (viewerId: string) => void;
+  /** Moves the viewer from its window of its own back to a tab; only in that window. */
+  dock?: (viewerId: string) => void;
+  /** The windows the viewer can move to (window-choices.ts), and the move to the one chosen. */
+  windows?: () => MenuItem[];
+  moveToWindow?: (viewerId: string, choice: string) => void;
   /** Its home folder, to show paths shorter. */
   home: () => string;
 }
@@ -75,6 +81,11 @@ export class ViewerView {
       const popOut = iconButton('popOut', 'Open in a window of its own');
       popOut.addEventListener('click', () => hooks.popOut?.(viewerId));
       this.bar.append(popOut);
+    }
+    if (hooks.dock) {
+      const dock = iconButton('dock', 'Return to a tab');
+      dock.addEventListener('click', () => hooks.dock?.(viewerId));
+      this.bar.append(dock);
     }
     this.element.append(this.bar, this.body);
     this.element.addEventListener('focusin', () => hooks.onFocus?.(viewerId));
@@ -235,12 +246,17 @@ export class ViewerView {
       { id: 'copy', label: 'Copy', enabled: !!selected },
       { id: 'copyPath', label: 'Copy File Path' },
       ...(hasRendering(this.format) ? [{ id: 'mode', label: this.source ? 'Show Rendered' : 'Show Source' }] : []),
+      ...(this.hooks.popOut || this.hooks.dock || this.hooks.windows ? [{ id: '-', label: '' }] : []),
       ...(this.hooks.popOut ? [{ id: 'popOut', label: 'Open in a Window of Its Own' }] : []),
+      ...(this.hooks.dock ? [{ id: 'dock', label: 'Return to a Tab' }] : []),
+      ...(this.hooks.windows ? [{ id: 'window', label: 'Move to Window', submenu: this.hooks.windows() }] : []),
     ];
     const choice = await this.hooks.menu(items, e);
     if (choice === 'copy') this.hooks.copy(selected);
     if (choice === 'copyPath' && this.viewer) this.hooks.copy(this.viewer.file);
     if (choice === 'mode') this.setSource(!this.source);
     if (choice === 'popOut') this.hooks.popOut?.(this.viewerId);
+    if (choice === 'dock') this.hooks.dock?.(this.viewerId);
+    if (choice?.startsWith('window:')) this.hooks.moveToWindow?.(this.viewerId, choice);
   }
 }

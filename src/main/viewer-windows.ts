@@ -29,6 +29,8 @@ export class ViewerWindows {
   constructor(
     private readonly daemon: { send: (msg: ClientMessage) => void },
     private readonly quitting: () => boolean,
+    /** A viewer left its window for a tab. */
+    private readonly docked: (viewerId: string) => void,
   ) {}
 
   /** After the app is ready. */
@@ -58,7 +60,7 @@ export class ViewerWindows {
     return true;
   }
 
-  /** Opens a window for each viewer shown on its own, and closes those of viewers that are gone. */
+  /** Opens a window for each viewer shown on its own, and closes those of viewers that are gone or back in a tab. */
   update(state: AppState): void {
     this.state = state;
     for (const id of this.pages.keys()) if (!state.viewers[id]) this.pages.delete(id);
@@ -66,6 +68,7 @@ export class ViewerWindows {
       if (state.viewers[id]?.window) continue;
       this.windows.delete(id);
       win.destroy();
+      if (state.viewers[id]) this.docked(id);
     }
     for (const viewer of Object.values(state.viewers)) {
       if (viewer.window && !this.windows.has(viewer.id)) this.open(viewer.id);

@@ -186,42 +186,108 @@ export function closeTab(state: AppState, tabId: string, effects: Effects): void
 }
 
 /**
- * Shows a viewer for a terminal. A viewer of the same file in the terminal's
- * workspace comes to the front instead of a second one; otherwise the viewer
- * opens as a tab of another pane that shows a viewer, or in a new pane to the
- * right of the terminal. The focus stays where it is, so typing still goes to
- * the terminal. Returns the id of the viewer shown, or null when the terminal
- * has no tab.
+ * The viewer a show request means, if it is open: the one named by `id`, else
+ * one of the same file, else content the same terminal sent under the same
+ * name. It may be anywhere, as the user moves viewers between panes and
+ * windows; the request then updates it where it is.
  */
-export function showViewer(state: AppState, terminalId: string, viewer: ViewerState): string | null {
-  if (viewer.window) {
-    const same = Object.values(state.viewers).find((v) => v.window && !v.owned && !viewer.owned && v.file === viewer.file);
-    if (same) return refreshViewer(same, viewer);
-    state.viewers[viewer.id] = viewer;
-    return viewer.id;
+export function shownBefore(state: AppState, terminalId: string, asked: ViewerState, id?: string): ViewerState | undefined {
+  const named = id ? state.viewers[id] : undefined;
+  if (named && !!named.owned === !!asked.owned) return named;
+  return Object.values(state.viewers).find((v) =>
+    asked.owned ? v.owned && !!asked.name && v.source === terminalId && v.name === asked.name : !v.owned && v.file === asked.file,
+  );
+}
+
+/**
+ * Shows a viewer for a terminal. A viewer open before (`open`, from
+ * shownBefore) stays where it is and comes to the front of its pane;
+ * otherwise the viewer opens as a tab of another pane that shows a viewer, or
+ * in a new pane next to the terminal. The focus stays where it is, so typing
+ * still goes to the terminal. Returns the id of the viewer shown, or null when
+ * the terminal has no tab.
+ */
+export function showViewer(state: AppState, terminalId: string, viewer: ViewerState, open?: ViewerState): string | null {
+  if (open) {
+    refreshViewer(open, viewer);
+    if (!open.owned) open.file = viewer.file;
+    const found = findTab(state, open.id);
+    if (found) found.workspace.root = updatePane(found.workspace.root, found.pane.id, (p) => ({ ...p, activeTab: open.id }));
+    return open.id;
   }
-  const found = findTab(state, terminalId);
-  if (!found) return null;
-  const { workspace } = found;
-  const sameId = viewer.owned ? undefined : tabIds(workspace.root).find((id) => state.viewers[id] && !state.viewers[id].owned && state.viewers[id].file === viewer.file);
-  if (sameId) {
-    const pane = paneOfTab(workspace.root, sameId)!;
-    workspace.root = updatePane(workspace.root, pane.id, (p) => ({ ...p, activeTab: sameId }));
-    return refreshViewer(state.viewers[sameId], viewer);
-  }
+  if (!viewer.window && !findTab(state, terminalId)) return null;
+  viewer.source = terminalId;
   state.viewers[viewer.id] = viewer;
+  if (!viewer.window) placeNear(state, terminalId, viewer.id);
+  return viewer.id;
+}
+
+/**
+ * Puts a viewer's tab next to a terminal: into another pane of its workspace
+ * that shows a viewer, or into a new pane beside the terminal's.
+ */
+function placeNear(state: AppState, terminalId: string, viewerId: string): boolean {
+  const found = findTab(state, terminalId);
+  if (!found) return false;
+  const { workspace } = found;
   const target = panes(workspace.root).find((p) => p.id !== found.pane.id && state.viewers[p.activeTab]);
   if (target) {
-    workspace.root = updatePane(workspace.root, target.id, (p) => {
-      const tabs = [...p.tabs];
-      tabs.splice(tabs.indexOf(p.activeTab) + 1, 0, viewer.id);
-      return { ...p, tabs, activeTab: viewer.id };
-    });
+    addTab(workspace, target.id, viewerId);
   } else {
-    const pane: PaneNode = { type: 'pane', id: newId(), tabs: [viewer.id], activeTab: viewer.id };
+    const pane: PaneNode = { type: 'pane', id: newId(), tabs: [viewerId], activeTab: viewerId };
     workspace.root = splitPane(workspace.root, found.pane.id, pane, splitSide(state.terminals[terminalId]), newId);
   }
-  return viewer.id;
+  return true;
+}
+
+/** Adds a tab after the active one of a pane and makes it active. */
+function addTab(workspace: WorkspaceState, paneId: string, tabId: string): void {
+  workspace.root = updatePane(workspace.root, paneId, (p) => {
+    const tabs = [...p.tabs];
+    tabs.splice(tabs.indexOf(p.activeTab) + 1, 0, tabId);
+    return { ...p, tabs, activeTab: tabId };
+  });
+}
+
+/** Makes a tab active in its pane, its pane focused and its workspace shown. */
+function reveal(state: AppState, tabId: string): void {
+  const found = findTab(state, tabId);
+  if (!found) return;
+  found.workspace.root = updatePane(found.workspace.root, found.pane.id, (p) => ({ ...p, activeTab: tabId }));
+  focus(state, found.group, found.workspace, found.pane.id);
+}
+
+/**
+ * Moves a tab, or a viewer shown in a window of its own, to the focused pane
+ * of a window. A window showing no workspace gets a group for it, named
+ * after the group the tab comes from.
+ */
+function moveTabToWindow(state: AppState, tabId: string, window: WindowState, home: string): void {
+  const source = findTab(state, tabId);
+  const viewer = state.viewers[tabId];
+  if (source ? windowOf(state, source.group) === window : !viewer?.window) return;
+  if (source) takeTab(state, tabId);
+  if (viewer) {
+    viewer.window = undefined;
+    viewer.pane = undefined;
+  }
+  const shown = window.activeWorkspaceId ? findWorkspace(state, window.activeWorkspaceId) : null;
+  if (shown && shown.group.windowId === window.id) {
+    addTab(shown.workspace, shown.workspace.focusedPaneId, tabId);
+    return;
+  }
+  const pane: PaneNode = { type: 'pane', id: newId(), tabs: [tabId], activeTab: tabId };
+  const cwd = source?.group.cwd || state.terminals[tabId]?.cwd || home;
+  const group: GroupState = {
+    id: newId(),
+    name: source?.group.name ?? nextName(state.groups.map((g) => g.name), 'Group'),
+    cwd,
+    workspaces: [{ id: newId(), name: 'Workspace 1', root: pane, focusedPaneId: pane.id }],
+    collapsed: false,
+    windowId: window.id,
+  };
+  state.groups.push(group);
+  window.activeWorkspaceId = group.workspaces[0].id;
 }
 
 /**
@@ -234,10 +300,9 @@ export function splitSide(terminal: TerminalState | undefined): 'right' | 'down'
 }
 
 /** An open viewer shown again: it takes the name and format asked for this time. */
-function refreshViewer(open: ViewerState, asked: ViewerState): string {
+function refreshViewer(open: ViewerState, asked: ViewerState): void {
   if (asked.name) open.name = asked.name;
   if (asked.format) open.format = asked.format;
-  return open.id;
 }
 
 function focus(state: AppState, group: GroupState, workspace: WorkspaceState, paneId: string): void {
@@ -306,6 +371,7 @@ function apply(state: AppState, action: Action, home: string): Effects {
       const window: WindowState = { id: action.windowId, activeWorkspaceId: null, ui: {} };
       state.windows.push(window);
       if (action.groupId) apply(state, { type: 'moveGroupToWindow', groupId: action.groupId, windowId: window.id }, home);
+      else if (action.tabId) moveTabToWindow(state, action.tabId, window, home);
       break;
     }
     case 'closeWindow': {
@@ -429,19 +495,37 @@ function apply(state: AppState, action: Action, home: string): Effects {
       if (!found || !action.file) break;
       const id = newId();
       state.viewers[id] = { id, file: action.file };
-      found.workspace.root = updatePane(found.workspace.root, action.paneId, (p) => {
-        const tabs = [...p.tabs];
-        tabs.splice(tabs.indexOf(p.activeTab) + 1, 0, id);
-        return { ...p, tabs, activeTab: id };
-      });
+      addTab(found.workspace, action.paneId, id);
       focus(state, found.group, found.workspace, action.paneId);
       break;
     }
     case 'popOutViewer': {
       const viewer = state.viewers[action.viewerId];
       if (!viewer || viewer.window) break;
+      viewer.pane = findTab(state, viewer.id)?.pane.id;
       takeTab(state, viewer.id);
       viewer.window = true;
+      break;
+    }
+    case 'dockViewer': {
+      const viewer = state.viewers[action.viewerId];
+      if (!viewer?.window) break;
+      const from = viewer.pane ? findPane(state, viewer.pane) : null;
+      if (from) addTab(from.workspace, from.pane.id, viewer.id);
+      else if (!viewer.source || !placeNear(state, viewer.source, viewer.id)) {
+        // Neither is left: the first window showing a workspace takes it.
+        const window = state.windows.find((w) => w.activeWorkspaceId && findWorkspace(state, w.activeWorkspaceId));
+        if (!window) break;
+        moveTabToWindow(state, viewer.id, window, home);
+      }
+      viewer.window = undefined;
+      viewer.pane = undefined;
+      reveal(state, viewer.id);
+      break;
+    }
+    case 'moveTabToWindow': {
+      const window = windowById(action.windowId);
+      if (window && isTab(state, action.terminalId)) moveTabToWindow(state, action.terminalId, window, home);
       break;
     }
     case 'closeViewer': {

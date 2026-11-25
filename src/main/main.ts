@@ -38,7 +38,12 @@ const daemon = new DaemonClient(
     return response === 0;
   },
 );
-const viewerWindows = new ViewerWindows(daemon, () => quitting);
+const viewerWindows = new ViewerWindows(daemon, () => quitting, (viewerId) => {
+  // A viewer back in a tab: its window comes forward to show it.
+  const window = windows.get(terminalWindows.get(viewerId) ?? '');
+  if (window?.isMinimized()) window.restore();
+  window?.focus();
+});
 /** Open windows by their id in the state. */
 const windows = new Map<string, BrowserWindow>();
 /** Ids of open windows, the most recently focused last. */
@@ -188,11 +193,11 @@ function watchWindow(window: BrowserWindow): void {
 }
 
 /** The start entry of the main process: the app, the system and what draws the window. */
-/** Asks the daemon for a new window, optionally taking a group; it opens when the state has it. */
-function newWindow(from: BrowserWindow | null, groupId?: string): void {
+/** Asks the daemon for a new window, optionally taking a group or a tab; it opens when the state has it. */
+function newWindow(from: BrowserWindow | null, take: { groupId?: string; tabId?: string } = {}): void {
   const windowId = crypto.randomUUID().replace(/-/g, '').slice(0, 12);
   requested.set(windowId, from);
-  daemon.send({ type: 'action', action: { type: 'createWindow', windowId, groupId } });
+  daemon.send({ type: 'action', action: { type: 'createWindow', windowId, ...take } });
 }
 
 /** The app icon counts the agents that need the user in all windows. */
@@ -317,7 +322,10 @@ function registerIpc(): void {
   });
   ipcMain.on('stopAll', () => void stopAll());
   ipcMain.on('closeWindow', (e) => senderWindow(e)?.close());
-  ipcMain.on('newWindow', (e, groupId?: string) => newWindow(senderWindow(e), typeof groupId === 'string' ? groupId : undefined));
+  ipcMain.on('newWindow', (e, take?: { groupId?: unknown; tabId?: unknown }) => {
+    const text = (value: unknown) => (typeof value === 'string' ? value : undefined);
+    newWindow(senderWindow(e), { groupId: text(take?.groupId), tabId: text(take?.tabId) });
+  });
   ipcMain.handle('daemonOutdated', () => daemon.outdated);
   ipcMain.handle('appInfo', () => ({
     version: app.getVersion(),

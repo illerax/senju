@@ -31,6 +31,7 @@ import { measureSwitch, nameTerminals, note, report, startPerfMonitor, terminalN
 import { applyTheme } from './theme';
 import { ViewerView } from './viewer-view';
 import { viewerLabel } from '../shared/viewer';
+import { windowChoices } from './window-choices';
 
 const SLOW_RENDER_MS = 100;
 
@@ -315,7 +316,7 @@ function groupElementsFor(groupId: string): GroupElements {
       { id: 'rename', label: 'Rename Group' },
       { id: 'cwd', label: 'Change Default Path…' },
       { id: '-', label: '' },
-      { id: 'window', label: 'Move to Window', submenu: windowChoices() },
+      { id: 'window', label: 'Move to Window', submenu: windowChoices(shared, state.windowId) },
       { id: 'close', label: 'Close Group' },
       { id: 'export', label: 'Save Group As…' },
       { id: 'delete', label: 'Delete Group' },
@@ -325,7 +326,7 @@ function groupElementsFor(groupId: string): GroupElements {
     if (choice === 'workspace') act({ type: 'createWorkspace', groupId });
     if (choice === 'rename') rename();
     if (choice === 'cwd') void changeGroupCwd(group);
-    if (choice === 'window:new') senju.newWindow(groupId);
+    if (choice === 'window:new') senju.newWindow({ groupId });
     else if (choice?.startsWith('window:')) act({ type: 'moveGroupToWindow', groupId, windowId: choice.slice('window:'.length) });
     if (choice === 'delete') void deleteGroup(group);
     if (choice === 'close') void closeGroup(group);
@@ -442,23 +443,6 @@ function renderSidebar(): void {
   for (const id of workspaceElements.keys()) if (!workspaceIds.has(id)) workspaceElements.delete(id);
 }
 
-/** Where a group can move: a new window, or another window, named by its groups. */
-function windowChoices(): MenuItem[] {
-  const others = shared.windows.filter((w) => w.id !== state.windowId);
-  return [
-    { id: 'window:new', label: 'New Window' },
-    ...(others.length ? [{ id: '-', label: '' }] : []),
-    ...others.map((w, i) => {
-      const names = shared.groups.filter((g) => g.windowId === w.id).map((g) => g.name);
-      return { id: `window:${w.id}`, label: names.length ? truncate(names.join(', '), 48) : `Empty window ${i + 1}` };
-    }),
-  ];
-}
-
-function truncate(text: string, max: number): string {
-  return text.length > max ? `${text.slice(0, max - 1)}…` : text;
-}
-
 async function changeGroupCwd(group: GroupState): Promise<void> {
   const folder = await senju.pickFolder(group.cwd);
   if (folder) act({ type: 'setGroupCwd', groupId: group.id, cwd: folder });
@@ -563,6 +547,8 @@ function viewerView(viewerId: string): ViewerView {
       },
       onZoom: (id, steps) => setTabZoom(id, tabZoom(id) + steps),
       popOut: (id) => act({ type: 'popOutViewer', viewerId: id }),
+      windows: () => windowChoices(shared, state.windowId),
+      moveToWindow: moveTabToWindow,
       home: () => home,
     });
     viewers.set(viewerId, view);
@@ -576,6 +562,27 @@ async function openFile(): Promise<void> {
   if (!pane) return;
   const file = await senju.pickFile(state.terminals[pane.activeTab]?.cwd);
   if (file) act({ type: 'openViewer', paneId: pane.id, file });
+}
+
+/** Moves a tab to the window chosen from windowChoices. */
+function moveTabToWindow(tabId: string, choice: string): void {
+  if (choice === 'window:new') senju.newWindow({ tabId });
+  else if (choice.startsWith('window:')) act({ type: 'moveTabToWindow', terminalId: tabId, windowId: choice.slice('window:'.length) });
+}
+
+/** The menu of a tab in a tab bar. */
+async function tabMenu(tabId: string, label: HTMLElement, e: MouseEvent): Promise<void> {
+  const choice = await contextMenu([
+    { id: 'rename', label: 'Rename Tab' },
+    { id: 'window', label: 'Move to Window', submenu: windowChoices(shared, state.windowId) },
+    ...(state.viewers[tabId] ? [{ id: 'popOut', label: 'Open in a Window of Its Own' }] : []),
+    { id: '-', label: '' },
+    { id: 'close', label: 'Close Tab', accelerator: keymap.accelerator('closeTab') },
+  ], e);
+  if (choice === 'rename') renameTab(tabId, label);
+  if (choice?.startsWith('window:')) moveTabToWindow(tabId, choice);
+  if (choice === 'popOut') act({ type: 'popOutViewer', viewerId: tabId });
+  if (choice === 'close') void closeTab(tabId);
 }
 
 async function terminalMenu(terminalId: string, e: MouseEvent): Promise<void> {
@@ -822,6 +829,11 @@ class PaneView {
     tab.addEventListener('dblclick', (e) => {
       e.stopPropagation();
       renameTab(terminalId, label);
+    });
+    tab.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      void tabMenu(terminalId, label, e);
     });
     draggable(tab, 'tab', terminalId);
     dropZone(tab, ['tab'], (_kind, id) => act({ type: 'moveTab', terminalId: id, paneId: this.id, toIndex: this.node.tabs.indexOf(terminalId) }));
