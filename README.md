@@ -136,7 +136,7 @@ Create a group with **+** at the top of the sidebar; it starts in your home fold
 - Exiting a shell closes its tab; the last tab closes its pane, and the last pane its workspace.
 - A tab can also be a [viewer](#viewers) of a file: renamed, moved, zoomed and closed like a terminal's tab.
 
-Closing the last window only closes the UI: every terminal keeps running and is there, in every window, when you open Senju again. To stop everything, use **Quit and stop all processes** at the bottom of the settings; the next start restores the terminals as after a reboot.
+Closing the last window only closes the UI: every terminal keeps running and is there, in every window, when you open Senju again. To stop everything, use **Quit and stop all processes** at the bottom of the settings; the next start restores the terminals as after a reboot. **Restart background service** in **Settings → About** stops the service and starts it again right away, for when it misbehaves or still runs an older build; terminals come back the same way.
 
 ### Keyboard shortcuts
 

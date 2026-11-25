@@ -1697,6 +1697,14 @@ async function main(): Promise<void> {
       });
       if (ok) senju.stopAll();
     },
+    restartDaemon: async () => {
+      const ok = await confirmDialog({
+        title: 'Restart the background service?',
+        detail: 'Running programs are stopped. Terminals come back as after a reboot: agents resume their sessions and commands start again or offer Run again.',
+        confirmLabel: 'Restart service',
+      });
+      if (ok) (setBanner('outdated', null), senju.restartDaemon());
+    },
     confirm: (message, detail) => confirmDialog({ title: message, detail, confirmLabel: 'Delete' }),
   });
   document.body.append(settingsView.element);
