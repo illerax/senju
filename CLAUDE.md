@@ -12,6 +12,7 @@ Everything in this repository must be in English: code, comments, identifiers, d
 
 ## Commands
 
+- A new checkout or worktree needs `npm ci` first: `node_modules` is not shared, and a build without it fails on missing modules.
 - `npm run build` — bundle with esbuild into `dist/` (`build.mjs`).
 - `npm run typecheck`, `npm test` (vitest, pure modules only).
 - `npm run test:daemon` — end-to-end daemon test in a throwaway `SENJU_HOME`; run it after touching `src/daemon`.
@@ -37,6 +38,7 @@ Everything in this repository must be in English: code, comments, identifiers, d
 - Playwright's `app.close()` hangs because the daemon outlives the UI; end a test with `window.senju.stopAll()` and wait for the process `exit` event.
 - Stray test daemons: find them by `SENJU_HOME` in `/proc/<pid>/environ`; never `pkill -f` a pattern, it can match the calling shell.
 - Fake agents in tests: run them by absolute path with a user recipe override; a bare `claude` starts the real one from the user's PATH.
+- Test windows (`test:ui`, `screenshots`) take the keyboard focus, so whatever the user types lands in them: stray text in demo terminals and flaky checks. Run them under `xvfb-run -a -s "-screen 0 1440x900x24"` when it is installed (CI does; an 8-bit screen breaks screenshots), otherwise ask the user not to type meanwhile, and check screenshots for stray input before committing them.
 
 ## Architecture
 
@@ -54,9 +56,10 @@ Everything in this repository must be in English: code, comments, identifiers, d
 - A vanished job or a shell killed by a signal is kept for a grace period, so processes killed by a system shutdown are still restored, while ones the user closed are not.
 - Process inspection (`src/daemon/procinfo.ts`) reads `/proc` on Linux, uses `ps`/`lsof` on macOS and is unavailable on Windows.
 - State files of older versions are migrated in `src/daemon/store.ts`; bump `AppState.version` and add a migration when the persisted shape changes.
-- UI design system (`src/renderer/styles.css`): every color derives from the theme's background and foreground plus the brand amber; one bar height (`--bar`), row height (`--row`) and radius scale; icons only from `src/renderer/icons.ts`; menus and dialogs are drawn by the app (`menu.ts`, `dialog.ts`, `color-picker.ts`), never native, so they follow the theme.
+- UI design system (`src/renderer/styles.css`): every color derives from the theme's background and foreground plus the brand amber, except a workspace's own color (`--ws-color`: its frame and tab bars, sidebar markers); one bar height (`--bar`), row height (`--row`) and radius scale; icons only from `src/renderer/icons.ts`; menus and dialogs are drawn by the app (`menu.ts`, `dialog.ts`, `color-picker.ts`), never native, so they follow the theme.
 - Commands and their default shortcuts live in `src/shared/commands.ts`; users override them in settings (`keybindings`). Defaults must not take keys that programs inside a terminal can receive: Ctrl+Shift combinations and Ctrl+Tab on Linux/Windows, Cmd on macOS.
 - Settings (`src/shared/settings.ts`) are saved from the settings page and keep only values that differ from the defaults. Renderer code must not import modules that touch the file system; theme helpers live in `src/shared/themes.ts`.
 - Every window gets the whole state and renders its share (`windowView`); the main process sends a terminal's output only to the window showing it. Actions that depend on a window (`createGroup`, `setUi`, reopening or importing a group) name it.
+- The status bar shows totals only (where you are, agents waiting, all agents, zoom): one item per agent or workspace crowds it out with many agents. Single agents belong on their tabs, in the sidebar and in All agents.
 - The renderer re-renders on every state broadcast; keep DOM elements per id and update them in place (`placeChildren`), or double clicks, focus and inline renames break.
 - The renderer is offline under a strict CSP: fonts are bundled (`@fontsource`, esbuild file loader), nothing loads from the network.

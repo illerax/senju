@@ -85,7 +85,7 @@ fs.writeFileSync(rc, `export PATH="${bin}:$PATH"\nPS1='\\[\\e[32m\\]dev\\[\\e[0m
 fs.writeFileSync(path.join(home, 'settings.json'), JSON.stringify({ shell: '/bin/bash', shellArgs: ['--noprofile', '--rcfile', rc, '-i'] }));
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const app = await _electron.launch({ args: ['--no-sandbox', '.'], env: { ...process.env, HOME: home, SENJU_HOME: home, XDG_RUNTIME_DIR: home, CLAUDE_CONFIG_DIR: path.join(home, '.claude') } });
+const app = await _electron.launch({ args: ['--no-sandbox', '.'], env: { ...process.env, NPM_CONFIG_UPDATE_NOTIFIER: 'false', HOME: home, SENJU_HOME: home, XDG_RUNTIME_DIR: home, CLAUDE_CONFIG_DIR: path.join(home, '.claude') } });
 const page = await app.firstWindow();
 await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setContentSize(1440, 900));
 await page.waitForSelector('.empty');
@@ -162,6 +162,41 @@ await sleep(1200);
 await page.screenshot({ path: path.join(out, 'overview.png') });
 await page.keyboard.press('Escape');
 await sleep(300);
+
+// A report an agent shows next to its terminal, in the servers workspace.
+fs.writeFileSync(
+  path.join(project, 'report.md'),
+  `# Save the state in the background
+
+Saving \`state.json\` blocked the event loop on a busy disk, so keystrokes stalled for up to **180 ms**.
+
+## What changed
+
+- The structure is written by a worker; the daemon only queues the latest copy.
+- Scrollback files go one terminal per tick, busy terminals less often.
+- Everything is flushed on shutdown, as before.
+
+## Measured
+
+| Case | Before | After |
+| --- | --- | --- |
+| Keystroke, idle disk | 4 ms | 4 ms |
+| Keystroke, busy disk | 180 ms | 6 ms |
+| Save on shutdown | 40 ms | 42 ms |
+
+\`\`\`ts
+queue.push(() => store.write(snapshot(state)));
+\`\`\`
+`,
+);
+await act({ type: 'activateWorkspace', workspaceId: servers.id });
+await sleep(800);
+await type(servers.root.activeTab, 'clear; senju open report.md\r');
+await page.waitForSelector('.viewer-body h1');
+await sleep(1000);
+await page.screenshot({ path: path.join(out, 'viewer.png') });
+await act({ type: 'activateWorkspace', workspaceId: agents.id });
+await sleep(500);
 
 // Menu with the color submenu.
 await page.locator('.workspace', { hasText: 'agents' }).click({ button: 'right' });

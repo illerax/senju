@@ -24,7 +24,7 @@ Close the window, crash it, update it or reboot the computer: the layout, the ta
 - Groups in the sidebar, one per project, each with a list of workspaces and its own default folder.
 - Workspaces split horizontally and vertically into panes with any nesting; every pane has its own tabs.
 - Maximize a pane to read it over the whole workspace (the button in its tab bar, its context menu or the shortcut), and restore it the same way; moving the focus to another pane restores it too.
-- Colors for workspaces, drag and drop for groups, workspaces and tabs (also between panes), inline renaming.
+- Workspace colors that frame the workspace's terminals and tint their tab bars, drag and drop for groups, workspaces and tabs (also between panes), inline renaming.
 - Close a group you are not working on (**Close Group** in its context menu): its processes stop and it is saved to disk. Reopen it from the clock button at the top of the sidebar, and it comes back at its place with its workspaces, layout and scrollback, agents resuming their sessions as after a reboot. **Save Group As…** writes a group to a `.senju` file, and **Open Group from File…** in the same menu opens one as a new group, e.g. on another computer.
 - Several windows, each with its own groups: open an empty one with Ctrl+Shift+O (Cmd+Shift+O), or move a group to a new or another window with **Move to Window** in its context menu. A single tab moves the same way, from the menu of its tab, or by dragging it onto a tab bar of another window; its program keeps running. Senju opens every window again with its groups, place and size. Closing a window while others are open moves its groups to the end of the window you used before it; their processes keep running.
 - A collapsible sidebar that shrinks to a rail of workspace markers.
@@ -66,6 +66,9 @@ Close the window, crash it, update it or reboot the computer: the layout, the ta
   <tr>
     <td width="50%"><img src="docs/screenshots/shortcuts.png" alt="Keyboard shortcut settings"><br><sub>Every shortcut can be changed.</sub></td>
     <td width="50%"><img src="docs/screenshots/menu.png" alt="Workspace menu with the color submenu open"><br><sub>Workspace colors and context menus.</sub></td>
+  </tr>
+  <tr>
+    <td colspan="2"><img src="docs/screenshots/viewer.png" alt="A Markdown report an agent opened in a viewer tab next to its terminal"><br><sub>What an agent made, in a viewer next to its terminal.</sub></td>
   </tr>
   <tr>
     <td colspan="2"><img src="docs/screenshots/overview.png" alt="All agents: a card per agent with its status, configuration, account, model, context and the last lines of its screen"><br><sub>All agents, with the configuration, account or API and model each one runs with.</sub></td>
@@ -263,6 +266,7 @@ Settings live in `settings.json`, which holds only what differs from the default
 | `persistedScrollback` | `5000` | Lines saved per terminal and restored after a reboot. |
 | `autoRestart` | dev servers, log followers, monitors | Regular expressions for command lines that restart automatically after a reboot. |
 | `copyOnSelect` | `false` | Copy selected text to the clipboard. |
+| `checkForUpdates` | `true` | Look for a new release at start and every four hours; installing always asks first. |
 
 Changes in the settings page apply right away; edits to the file apply when the app starts. `shell`, `scrollback`, `autoRestart` and recipes are read by the background service when it starts.
 
@@ -332,17 +336,20 @@ npm run typecheck
 npm test             # unit tests
 npm run test:daemon  # end-to-end test of the background service: terminals, jobs, agents, restore
 npm run test:ui      # drives the app with Playwright and saves screenshots to ui-smoke/
-npm run test:perf    # keystroke latency under heavy output, switching times
+npm run test:perf    # keystroke latency under heavy output, switching times, a load of agents
 npm run test:network # a network share and an update server on a bad connection (Linux, needs fusermount3)
 npm run screenshots  # regenerates the README screenshots in docs/screenshots/
 npm run icons        # renders build/icon.svg into the app icons
-node scripts/update-e2e.mjs <old.AppImage> <dir>  # self-update test, see the script
+node scripts/update-e2e.mjs <old.AppImage> <dir>  # AppImage self-update test, see the script
+node scripts/update-e2e-mac.mjs                   # the same for macOS (runs in CI)
 ```
+
+The UI tests and the screenshots open windows that take the keyboard focus, so what you type meanwhile goes into them. On Linux, run them on a virtual display instead: `xvfb-run -a -s "-screen 0 1440x900x24" npm run test:ui` (Chromium fails to capture screenshots on the default 8-bit screen).
 
 The code is split by process:
 
 - `src/daemon` — the background service: owns the pseudo terminals (node-pty), mirrors each into a headless xterm for scrollback, tracks folders, programs and agent sessions, and saves the state.
-- `src/main` — the Electron main process: starts or connects to the service and relays messages.
+- `src/main` — the Electron main process: starts or connects to the service, opens the windows and sends each the output of its own terminals, opens viewers in windows of their own, shows notifications and installs updates.
 - `src/renderer` — the UI: sidebar, pane layout, tabs, xterm.js terminals, settings, menus and dialogs.
 - `src/cli` — the `senju` command and its MCP server, run in terminals with Electron as Node.
 - `src/shared` — state types, the protocol, layout operations, commands, settings and themes.
