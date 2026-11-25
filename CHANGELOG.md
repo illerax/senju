@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.1](https://github.com/illerax/senju/compare/v0.3.0...v0.3.1) (2026-11-25)
+
+
+### Features
+
+* restart the background service from the settings ([#56](https://github.com/illerax/senju/issues/56)) ([c1d2e0d](https://github.com/illerax/senju/commit/c1d2e0d9c0e4e92068da0a3c0f684dce78a132b1))
+* resume Antigravity CLI (agy) conversations ([#54](https://github.com/illerax/senju/issues/54)) ([1fb7731](https://github.com/illerax/senju/commit/1fb7731294d850027c7887940dcc3c9b8ceff0ba))
+
 ## [0.3.0](https://github.com/illerax/senju/compare/v0.2.0...v0.3.0) (2026-11-25)
 
 
