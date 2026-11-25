@@ -357,7 +357,7 @@ Releases follow [semantic versioning](https://semver.org). The version is decide
 | **patch** | Fixed or faster, nothing new | a bug fix, a performance gain, layout or wording |
 | none | Nothing reaches users | tests, CI, refactoring, documentation |
 
-While the version is below 1.0, a breaking change bumps the minor version and a feature the patch version. 1.0.0 is released by hand once the data and settings formats are stable.
+While the version is below 1.0, a breaking change bumps the minor version and a feature the patch version; a release with large features (several of them, or one that changes how Senju is used) bumps the minor version too, set with a `Release-As: 0.x.0` line at the end of a squash commit's message. 1.0.0 is released by hand once the data and settings formats are stable.
 
 The bump is computed from [Conventional Commits](https://www.conventionalcommits.org). Pull requests are squash-merged, so the PR title is the commit message, and CI checks it:
 
