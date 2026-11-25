@@ -1066,28 +1066,8 @@ body.resizing-column * {
   box-shadow: inset 0 0 0 1.5px var(--line-strong);
 }
 
-.status-item.working::before,
-.status-item.waiting::before,
-.status-item.done::before,
-.status-item.background::before {
-  content: '●';
-}
-
-/* Hollow: nothing to do until its background work ends. */
-.status-item.background::before {
-  content: '○';
-  color: var(--link);
-}
-
-.status-item.done::before {
-  color: var(--done);
-}
-
-.status-item.working::before {
-  color: var(--accent-text);
-}
-
 .status-item.waiting::before {
+  content: '●';
   color: var(--waiting);
 }
 
