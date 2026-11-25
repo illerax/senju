@@ -350,6 +350,33 @@ await page.locator('button', { hasText: 'Show diagnostics.log' }).click();
 await sleep(300);
 const shown = await app.evaluate(() => globalThis.__shown);
 report(`about shows diagnostics.log (${shown.map((f) => path.basename(f)).join(', ')})`, shown.length === 1 && path.basename(shown[0]) === 'diagnostics.log');
+
+// The background service can be restarted from the settings, after a confirmation.
+const daemonPids = () =>
+  fs.readdirSync('/proc').filter((pid) => {
+    try {
+      const environ = fs.readFileSync(`/proc/${pid}/environ`, 'utf8').split('\0');
+      return environ.includes(`SENJU_HOME=${home}`) && environ.includes('ELECTRON_RUN_AS_NODE=1');
+    } catch {
+      return false;
+    }
+  });
+const daemonBefore = daemonPids();
+const restartButton = page.locator('button', { hasText: 'Restart background service' });
+await restartButton.click();
+await page.locator('.dialog .button', { hasText: 'Cancel' }).click();
+await sleep(1000);
+report('cancelling the restart keeps the background service', daemonPids().join() === daemonBefore.join());
+await restartButton.click();
+await shot('2d-restart-service.png');
+await page.locator('.dialog .button', { hasText: 'Restart service' }).click();
+for (const until = Date.now() + 15000; Date.now() < until; await sleep(300)) {
+  const now = daemonPids();
+  if (now.length === 1 && !daemonBefore.includes(now[0])) break;
+}
+await page.waitForSelector('.pane .xterm');
+const daemonAfter = daemonPids();
+report(`the settings restart the background service (${daemonBefore} → ${daemonAfter})`, daemonBefore.length === 1 && daemonAfter.length === 1 && daemonAfter[0] !== daemonBefore[0]);
 await page.keyboard.press('Escape');
 await sleep(300);
 

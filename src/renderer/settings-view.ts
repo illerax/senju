@@ -35,6 +35,8 @@ export interface SettingsContext {
   showLogs: () => void;
   reportIssue: () => void;
   stopAll: () => void;
+  /** Asks, then restarts the background service from the current build. */
+  restartDaemon: () => void;
   confirm: (message: string, detail: string) => Promise<boolean>;
 }
 
@@ -268,7 +270,7 @@ export class SettingsView {
       const rows: [string, string][] = [
         ['Version', info.version],
         ['Build', info.build],
-        ['Background service', info.daemonOutdated ? 'outdated, restart it from the banner' : 'up to date'],
+        ['Background service', info.daemonOutdated ? 'outdated, restart it below' : 'up to date'],
         ['Electron', info.electron],
         ['Chromium', info.chrome],
         ['Node.js', info.node],
@@ -280,9 +282,22 @@ export class SettingsView {
         this.ctx.copy(rows.map(([t, v]) => `${t}: ${v}`).join('\n'));
         copy.textContent = 'Copied';
       });
-      page.append(copy, updates, ...this.problemSection());
+      page.append(copy, updates, ...this.serviceSection(), ...this.problemSection());
     });
     return page;
+  }
+
+  private serviceSection(): HTMLElement[] {
+    const text = el(
+      'p',
+      'settings-hint',
+      'The background service runs every terminal and keeps them alive while windows are closed. Restart it when it misbehaves or still runs an older build: it saves everything and starts again, and terminals come back as after a reboot.',
+    );
+    const actions = el('div', 'theme-actions');
+    const restart = el('button', 'button', 'Restart background service');
+    restart.addEventListener('click', () => this.ctx.restartDaemon());
+    actions.append(restart);
+    return [el('h3', '', 'Background service'), text, actions];
   }
 
   private problemSection(): HTMLElement[] {
