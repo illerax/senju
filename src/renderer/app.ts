@@ -1088,8 +1088,9 @@ function renderRail(): void {
 }
 
 /**
- * The status bar: where you are, the agents of this workspace, and agents
- * elsewhere that wait for input.
+ * The status bar: where you are, and totals of the agents. Single agents are
+ * left to the tabs, the sidebar and the overview, so a crowd of them never
+ * pushes the zoom out of sight.
  */
 function renderStatus(): void {
   const bar = $('statusbar');
@@ -1107,16 +1108,6 @@ function renderStatus(): void {
     else swatch.classList.add('empty');
     where.prepend(swatch);
     parts.push(where);
-    for (const id of tabIds(ctx.workspace.root)) {
-      const terminal = state.terminals[id];
-      const status = agentStatus(terminal);
-      if (status) {
-        const context = contextLabel(id);
-        const text = `${tabLabel(terminal)} ${statusText(id, status)}${context ? ` · ${context}` : ''}`;
-        const title = [status.tasks?.join('\n') ?? status.activity, profileText(state.profiles?.[id])].filter(Boolean).join('\n');
-        parts.push(item(status.kind, status.activity ? `${text} · ${status.activity}` : text, title));
-      }
-    }
   }
   parts.push(el('span', 'status-spacer'));
   let agents = 0;
@@ -1124,16 +1115,6 @@ function renderStatus(): void {
     for (const workspace of group.workspaces) {
       const counts = workspaceAgents(workspace);
       agents += counts.working + counts.waiting + counts.done + counts.background;
-      const kind = counts.waiting ? 'waiting' : counts.done ? 'done' : null;
-      if (workspace.id !== ctx?.workspace.id && kind) {
-        // The longest wait of the workspace, as the queue is sorted.
-        const ids = tabIds(workspace.root);
-        const first = waitingAgents.find((w) => ids.includes(w.terminalId));
-        const waited = first ? ` ${formatWait(Date.now() - first.since)}` : '';
-        const elsewhere = item(`${kind} link`, `${group.name}/${workspace.name} ${kind === 'done' ? 'finished' : 'waiting'}${waited}`, 'Show this workspace');
-        elsewhere.addEventListener('click', () => act({ type: 'activateWorkspace', workspaceId: workspace.id }));
-        parts.push(elsewhere);
-      }
     }
   }
   if (waitingAgents.length) {
