@@ -449,14 +449,31 @@ input.rename {
   width: 44px;
 }
 
+#sidebar-menu {
+  display: none;
+}
+
+/* Only the buttons to expand the sidebar and to open its actions fit, one above the other. */
 #sidebar.collapsed .sidebar-header {
   justify-content: center;
-  padding: 0;
+  height: auto;
+  padding: 6px 0;
+}
+
+#sidebar.collapsed .sidebar-actions {
+  flex-direction: column;
+  gap: 4px;
+}
+
+#sidebar.collapsed #sidebar-menu {
+  display: inline-grid;
 }
 
 #sidebar.collapsed .sidebar-logo,
 #sidebar.collapsed .sidebar-title,
 #sidebar.collapsed #add-group,
+#sidebar.collapsed #show-overview,
+#sidebar.collapsed #closed-groups,
 #sidebar.collapsed #groups {
   display: none;
 }

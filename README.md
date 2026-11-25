@@ -27,7 +27,7 @@ Close the window, crash it, update it or reboot the computer: the layout, the ta
 - Colors for workspaces, drag and drop for groups, workspaces and tabs (also between panes), inline renaming.
 - Close a group you are not working on (**Close Group** in its context menu): its processes stop and it is saved to disk. Reopen it from the clock button at the top of the sidebar, and it comes back at its place with its workspaces, layout and scrollback, agents resuming their sessions as after a reboot. **Save Group As…** writes a group to a `.senju` file, and **Open Group from File…** in the same menu opens one as a new group, e.g. on another computer.
 - Several windows, each with its own groups: open an empty one with Ctrl+Shift+O (Cmd+Shift+O), or move a group to a new or another window with **Move to Window** in its context menu. A single tab moves the same way, from the menu of its tab, or by dragging it onto a tab bar of another window; its program keeps running. Senju opens every window again with its groups, place and size. Closing a window while others are open moves its groups to the end of the window you used before it; their processes keep running.
-- A collapsible sidebar that shrinks to a rail of workspace markers.
+- A collapsible sidebar that shrinks to a rail of workspace markers, with the button that expands it and a **⋯** menu for new groups, all agents, closed groups and settings.
 
 **See what your agents are doing**
 
