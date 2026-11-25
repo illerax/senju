@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.3.2](https://github.com/illerax/senju/compare/v0.3.1...v0.3.2) (2026-11-25)
+
+
+### Features
+
+* frame a colored workspace and tint its tab bars ([#58](https://github.com/illerax/senju/issues/58)) ([c5201e2](https://github.com/illerax/senju/commit/c5201e28324e534661d6172841f13c067c8a1efb))
+
+
+### Bug Fixes
+
+* keep the expand button and the sidebar actions in the collapsed sidebar ([#57](https://github.com/illerax/senju/issues/57)) ([41fd637](https://github.com/illerax/senju/commit/41fd63759093ce084606d56404a415437ee1ba40))
+
 ## [0.3.1](https://github.com/illerax/senju/compare/v0.3.0...v0.3.1) (2026-11-25)
 
 
