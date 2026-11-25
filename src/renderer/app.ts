@@ -1057,7 +1057,7 @@ function renderWorkspace(force = false): void {
   if (!workspace) {
     layoutSignature = '';
     splitElements.clear();
-    container.classList.remove('maximized');
+    container.classList.remove('maximized', 'colored');
     renderEmpty(container);
     return;
   }
@@ -1073,6 +1073,10 @@ function renderWorkspace(force = false): void {
   for (const [id, view] of paneViews) if (!ids.has(id) && !view.element.isConnected) paneViews.delete(id);
   markFocus(workspace.focusedPaneId);
   showMaximized(workspace);
+  // The workspace color frames the terminals and tints their tab bars.
+  container.classList.toggle('colored', !!workspace.color);
+  if (workspace.color) container.style.setProperty('--ws-color', workspace.color);
+  else container.style.removeProperty('--ws-color');
   const focused = focusedTab();
   if (focused && !editing && !document.activeElement?.closest('.terminal-overlay')) {
     if (!focused.element.contains(document.activeElement)) focused.focus();
