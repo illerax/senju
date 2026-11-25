@@ -63,6 +63,21 @@ process.stdin.on('data', (d) => {
 `,
   { mode: 0o755 },
 );
+// A stand-in for Antigravity CLI: keeps the lock of its conversation open, as the real one does.
+fs.writeFileSync(
+  path.join(bin, 'agy'),
+  `#!/usr/bin/env node
+const fs = require('fs'), path = require('path'), crypto = require('crypto');
+const id = crypto.randomUUID();
+const dir = path.join(process.env.AGY_TEST_HOME, '.gemini', 'antigravity-cli', 'presence');
+fs.mkdirSync(dir, { recursive: true });
+const lock = fs.openSync(path.join(dir, id + '.lock'), 'w');
+console.log('conversation ' + id);
+process.stdin.setRawMode(true);
+process.stdin.on('data', (d) => d[0] === 3 && process.exit(0));
+`,
+  { mode: 0o755 },
+);
 // A user recipe overriding the built-in one, pointing at the stand-in.
 const builtin = JSON.parse(fs.readFileSync('recipes/claude-code.json', 'utf8'));
 fs.mkdirSync(path.join(home, 'recipes'));
@@ -340,6 +355,20 @@ for (const g of c.state.groups.filter((g) => g.name === 'closable')) c.send({ ty
 c.send({ type: 'action', action: { type: 'importGroup', file: path.join(home, 'missing.senju') } });
 check(await waitFor(() => c.errors?.some((m) => m.includes('missing.senju'))), 'a file that cannot be opened is reported');
 await waitFor(() => closableIndex() < 0);
+
+// Antigravity CLI: its conversation is the one whose lock it keeps open.
+if (process.platform === 'linux') {
+  c.send({ type: 'action', action: { type: 'createGroup', name: 'agy', cwd: work } });
+  await waitFor(() => c.state.groups.some((g) => g.name === 'agy'));
+  const agyGroup = () => c.state.groups.find((g) => g.name === 'agy');
+  const termA = focusedPane(agyGroup().workspaces[0]).activeTab;
+  c.send({ type: 'attach', terminalId: termA });
+  c.send({ type: 'input', terminalId: termA, data: `AGY_TEST_HOME='${home}' ${bin}/agy --model gemini-pro\r` });
+  const conversation = await waitFor(() => /conversation ([0-9a-f-]{36})/.exec(c.output[termA] ?? '')?.[1]);
+  check(await waitFor(() => term(termA)?.job?.recipe === 'antigravity' && term(termA).job.sessionId === conversation), 'Antigravity CLI is tracked with the conversation it keeps open');
+  c.send({ type: 'action', action: { type: 'deleteGroup', groupId: agyGroup().id } });
+  await waitFor(() => !agyGroup());
+}
 
 // Viewers: the senju command and its MCP server show files next to the terminal.
 const viewerIds = () => Object.keys(c.state.viewers ?? {});

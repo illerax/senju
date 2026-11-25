@@ -14,8 +14,8 @@ import { diagnose, diagnoseError, systemInfo, watchEventLoop } from '../shared/d
 import { loadSettings, type Settings } from '../shared/settings';
 import type { AppState, ClosedGroupInfo, JobState, SavedGroup, TerminalState, ViewerState } from '../shared/types';
 import { baseEnv, BUSY_MS, TerminalSession } from './terminal';
-import { hasChildren, inspectTerminals, type ProcessInfo } from './procinfo';
-import { findSessionFile, listSessions, loadRecipes, programOf, matchRecipe, requiredFiles, sessionFromArgs, sessionFromPidFile, type Recipe } from './recipes';
+import { hasChildren, inspectTerminals, openFiles, type ProcessInfo } from './procinfo';
+import { findSessionFile, listSessions, loadRecipes, programOf, matchRecipe, requiredFiles, sessionFromArgs, sessionFromOpenFiles, sessionFromPidFile, type Recipe } from './recipes';
 import { planRestore } from './restore';
 import { envDiff } from './shellquote';
 import { deleteScrollback, loadState, pruneScrollback, pruneViewers, readScrollback, saveState, saveStateAsync, viewerDir, writeScrollback, writeScrollbackSync } from './store';
@@ -788,9 +788,10 @@ class Daemon {
   }
 
   /**
-   * Finds the session of every agent terminal. The agent's per-process file is
-   * exact when the recipe has one. Otherwise each terminal claims the newest
-   * session file written after its agent started that no other terminal holds;
+   * Finds the session of every agent terminal. The agent's per-process file,
+   * or a file of its session it keeps open, is exact when the recipe has one.
+   * Otherwise each terminal claims the newest session file written after its
+   * agent started that no other terminal holds;
    * with several agents in one directory, the file goes to the terminal whose
    * output coincides with the file's last write.
    */
@@ -804,7 +805,9 @@ class Daemon {
       if (!job || !recipe) continue;
       const env = { ...this.env, ...terminal.env, ...job.env };
       const pid = this.tracked.get(terminal.id)?.agentPid;
-      const exact = await sessionFromPidFile(recipe, { cwd: job.cwd, env, pid });
+      const exact =
+        (await sessionFromPidFile(recipe, { cwd: job.cwd, env, pid })) ??
+        (recipe.session?.openFile && pid ? sessionFromOpenFiles(recipe, await openFiles(pid)) : null);
       if (exact) {
         if (terminal.job === job && job.sessionId !== exact) {
           job.sessionId = exact;
