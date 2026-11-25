@@ -152,6 +152,33 @@ async function inspectDarwin(shellPids: number[]): Promise<Map<number, TerminalP
   return result;
 }
 
+/** Parses `lsof -Fn`: the `n<path>` lines. */
+export function parseLsofNames(stdout: string): string[] {
+  return stdout
+    .split('\n')
+    .filter((line) => line.startsWith('n'))
+    .map((line) => line.slice(1));
+}
+
+/**
+ * The paths of the files a process has open; null where that cannot be told,
+ * or the process is gone. Reading the links does not touch the files, so a
+ * dead share cannot block it.
+ */
+export async function openFiles(pid: number): Promise<string[] | null> {
+  if (process.platform === 'linux') {
+    const fds = await fs.readdir(`/proc/${pid}/fd`).catch(() => null);
+    if (!fds) return null;
+    const links = await Promise.all(fds.map((fd) => fs.readlink(`/proc/${pid}/fd/${fd}`).catch(() => null)));
+    return links.filter((link): link is string => !!link && link.startsWith('/'));
+  }
+  if (process.platform === 'darwin') {
+    const stdout = await darwinOutput('lsof', ['-b', '-w', '-Fn', '-p', String(pid)]);
+    return stdout ? parseLsofNames(stdout) : null;
+  }
+  return null;
+}
+
 /** Whether a process has child processes; null where that cannot be told, or the process is gone. */
 export async function hasChildren(pid: number): Promise<boolean | null> {
   if (process.platform === 'linux') {

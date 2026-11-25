@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { builtinRecipes, expand, listSessions, matchRecipe, programOf, sessionFromArgs } from '../src/daemon/recipes';
+import { builtinRecipes, expand, listSessions, matchRecipe, programOf, sessionFromArgs, sessionFromOpenFiles } from '../src/daemon/recipes';
 import { planRestore } from '../src/daemon/restore';
 import { defaultSettings } from '../src/shared/settings';
 import type { TerminalState } from '../src/shared/types';
@@ -84,6 +84,32 @@ describe('planRestore', () => {
   it('keeps a pending command that was never run', () => {
     const p = { ...pane(), pending: { command: 'ls', cwd: '/' } };
     expect(plan(p)).toEqual({ pending: { command: 'ls', cwd: '/' } });
+  });
+});
+
+describe('Antigravity CLI', () => {
+  const agy = builtinRecipes.find((r) => r.name === 'antigravity')!;
+  const id = '36b76353-6493-4d0c-bf39-5a4f323bf0c7';
+
+  it('is recognised by its command', () => {
+    expect(matchRecipe(builtinRecipes, ['/home/u/.local/bin/agy', '--model', 'x'], '/work')?.name).toBe('antigravity');
+    expect(matchRecipe(builtinRecipes, ['agyle'], '/work')).toBeNull();
+  });
+
+  it('finds its conversation by the lock it keeps open, or in its arguments', () => {
+    const files = ['/home/u/.gemini/antigravity-cli/log/cli-1.log', `/home/u/.gemini/antigravity-cli/presence/${id}.lock`];
+    expect(sessionFromOpenFiles(agy, files)).toBe(id);
+    expect(sessionFromOpenFiles(agy, [`C:\\Users\\u\\.gemini\\antigravity-cli\\presence\\${id}.lock`])).toBe(id);
+    expect(sessionFromOpenFiles(agy, [`/home/u/.gemini/antigravity/presence/${id}.lock`])).toBeNull();
+    expect(sessionFromOpenFiles(agy, null)).toBeNull();
+    expect(sessionFromArgs(agy, ['agy', '--conversation', id])).toBe(id);
+    expect(sessionFromArgs(agy, ['agy', `-r=${id}`])).toBe(id);
+  });
+
+  it('resumes its conversation with the options it ran with', () => {
+    const resumed = planRestore(pane(job(['agy', '--model', 'gemini-pro', '-c', '--mode', 'plan', 'fix it'], { recipe: 'antigravity', sessionId: id })), builtinRecipes, [], {});
+    expect(resumed.command).toBe(`agy --model gemini-pro --mode plan --conversation ${id}`);
+    expect(planRestore(pane(job(['agy', '--conversation', 'old'], { recipe: 'antigravity' })), builtinRecipes, [], {}).command).toBe('agy --continue');
   });
 });
 

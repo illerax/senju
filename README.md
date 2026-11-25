@@ -49,7 +49,7 @@ Close the window, crash it, update it or reboot the computer: the layout, the ta
 
 - Terminals live in a background service, so closing or updating the window does not stop them.
 - After a reboot, groups, workspaces, layout, tabs, working directories and scrollback are restored.
-- Agents resume their own sessions — Claude Code with `claude --resume <id>`, one session per tab, even with several agents in one folder. Recipes for Codex CLI, Gemini CLI, OpenCode, Aider and Neovim sessions are included as well (less tested than Claude Code so far), and new agents are added with a small JSON [recipe](#agent-recipes).
+- Agents resume their own sessions — Claude Code with `claude --resume <id>`, one session per tab, even with several agents in one folder. Recipes for Codex CLI, Gemini CLI, Antigravity CLI (`agy`), OpenCode, Aider and Neovim sessions are included as well (less tested than Claude Code so far), and new agents are added with a small JSON [recipe](#agent-recipes).
 - Dev servers, log followers and monitors start again on their own; any other command offers a **Run again** button.
 
 **Make it yours**
@@ -202,7 +202,7 @@ senju open --window chart.html       # in a window of its own
 
 `--format` (`-f`) takes `markdown`, `json`, `yaml`, `html`, `csv`, `image`, `text` or a language such as `python` or `diff`; without it, the extension tells. Content that is piped in is kept by Senju until its tab is closed, and goes with a closed or exported group. Content shown again with the same `--name` from the same terminal replaces what that tab shows instead of opening another, so an agent can update a report it never wrote to a file.
 
-Claude Code gets the same as MCP tools, `show_file` and `show_content`, from the plugin Senju passes to it, so asking it to "show the report in Senju" is enough. Each call answers with the tab's id; passing it back as `id`, or using the same `name`, updates that tab in whatever pane or window you moved it to. Other agents can run the command, or `senju mcp` as an MCP server over stdio: add it to the agent's MCP configuration (Codex: `codex mcp add senju -- senju mcp`), or tell it about the command in its instructions (`AGENTS.md`). The tools only work in terminals of Senju; elsewhere they say so.
+Claude Code gets the same as MCP tools, `show_file` and `show_content`, from the plugin Senju passes to it, so asking it to "show the report in Senju" is enough. Each call answers with the tab's id; passing it back as `id`, or using the same `name`, updates that tab in whatever pane or window you moved it to. Other agents can run the command, or `senju mcp` as an MCP server over stdio: add it to the agent's MCP configuration (Codex: `codex mcp add senju -- senju mcp`, Antigravity CLI: `agy mcp add senju senju mcp`), or tell it about the command in its instructions (`AGENTS.md`). The tools only work in terminals of Senju; elsewhere they say so.
 
 ### Context and tokens
 
@@ -308,7 +308,8 @@ A recipe tells Senju how to recognise an agent, how to find its session id and h
 | `requires` | A file relative to the working folder that must exist, e.g. `Session.vim`. |
 | `session.args` | Regular expressions over the arguments; group 1 is the session id. |
 | `session.pidFile` | A JSON file the agent writes per process; `field` holds the session id. The most precise source. |
-| `session.files` | A folder with one file per session; `pattern` group 1 is the id. Options: `recursive`, `newestDirs` (only the last N subfolders by name) and `contains` (text that must appear at the start of the file). Used when there is no `pidFile`: each terminal takes the newest unclaimed session file written after its agent started. |
+| `session.openFile` | A regular expression over the paths of the files the agent process keeps open; group 1 is the session id. As precise as `pidFile`, on Linux and macOS: Antigravity CLI keeps `presence/<conversation>.lock` open. |
+| `session.files` | A folder with one file per session; `pattern` group 1 is the id. Options: `recursive`, `newestDirs` (only the last N subfolders by name) and `contains` (text that must appear at the start of the file). Used when neither of those names the session: each terminal takes the newest unclaimed session file written after its agent started. |
 | `flags` | Which original options `${flags}` carries over: everything starting with `-` except `drop`; `withValue` lists options followed by a separate value. Positional arguments are never carried over. |
 | `resume` | Command for a known session. |
 | `fallback` | Command when the session id is unknown. |

@@ -1,0 +1,20 @@
+{
+  "name": "antigravity",
+  "match": "^agy$",
+  "session": {
+    "args": ["(?:--conversation|--resume|-r)[ =]([0-9a-f-]{36})"],
+    "openFile": "antigravity-cli[/\\\\]presence[/\\\\]([0-9a-f-]{36})\\.lock$"
+  },
+  "flags": {
+    "drop": [
+      "--conversation", "--resume", "-r", "--continue", "-c", "--print", "-p", "--prompt",
+      "--prompt-interactive", "-i", "--new-project", "--output-format", "--input-format", "--json-schema", "--print-timeout"
+    ],
+    "withValue": [
+      "--conversation", "--resume", "-r", "--add-dir", "--agent", "--effort", "--log-file", "--mode", "--model",
+      "--project", "--settings", "--output-format", "--input-format", "--json-schema", "--print-timeout"
+    ]
+  },
+  "resume": "agy ${flags} --conversation ${sessionId}",
+  "fallback": "agy ${flags} --continue"
+}

@@ -12,6 +12,7 @@ import type { UsageSpec } from './usage';
 import claudeCode from '../../recipes/claude-code.json';
 import codex from '../../recipes/codex.json';
 import gemini from '../../recipes/gemini.json';
+import antigravity from '../../recipes/antigravity.json';
 import opencode from '../../recipes/opencode.json';
 import aider from '../../recipes/aider.json';
 import nvim from '../../recipes/nvim.json';
@@ -37,6 +38,8 @@ export interface Recipe {
     args?: string[];
     /** A file written by the agent per process that names its session. */
     pidFile?: { file: string; field: string };
+    /** Regular expression over the paths of the files the agent keeps open; group 1 is the session id. */
+    openFile?: string;
     files?: SessionFiles;
   };
   /** Which original options ${flags} carries over; positional arguments are never carried over. */
@@ -55,7 +58,7 @@ export interface Recipe {
   usage?: UsageSpec;
 }
 
-export const builtinRecipes = [claudeCode, codex, gemini, opencode, aider, nvim] as Recipe[];
+export const builtinRecipes = [claudeCode, codex, gemini, antigravity, opencode, aider, nvim] as Recipe[];
 
 function isRecipe(value: unknown): value is Recipe {
   const r = value as Recipe;
@@ -289,4 +292,16 @@ export async function sessionFromPidFile(recipe: Recipe, ctx: TemplateContext): 
   } catch {
     return null;
   }
+}
+
+/** Session id from the files the agent keeps open, if the recipe names one by its path. */
+export function sessionFromOpenFiles(recipe: Recipe, files: string[] | null): string | null {
+  const pattern = recipe.session?.openFile;
+  if (!pattern || !files) return null;
+  const re = new RegExp(pattern);
+  for (const file of files) {
+    const id = re.exec(file)?.[1];
+    if (id) return id;
+  }
+  return null;
 }
