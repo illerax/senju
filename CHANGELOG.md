@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.3.0](https://github.com/illerax/senju/compare/v0.2.0...v0.3.0) (2026-11-25)
+
+
+### Features
+
+* move tabs between windows, and agents update what they showed wherever it is ([#50](https://github.com/illerax/senju/issues/50)) ([edba13c](https://github.com/illerax/senju/commit/edba13cc657294b7180bfb1e88f21c05b760aaed))
+
+
+### Bug Fixes
+
+* keep the status bar to agent totals ([#51](https://github.com/illerax/senju/issues/51)) ([22cecef](https://github.com/illerax/senju/commit/22cecef02a52141f6307d2aba2b931082b4fd365))
+
+
+### Documentation
+
+* say when a release below 1.0 bumps the minor version ([#53](https://github.com/illerax/senju/issues/53)) ([fe1b4e1](https://github.com/illerax/senju/commit/fe1b4e10ab32459bd712e588598d7fc66d181b06))
+
 ## [0.2.0](https://github.com/illerax/senju/compare/v0.1.12...v0.2.0) (2026-11-24)
 
 
