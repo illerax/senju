@@ -118,6 +118,23 @@ report('group collapses', (await state()).groups[0].collapsed === true);
 await page.locator('.group-header').first().click();
 await sleep(300);
 
+// The collapsed sidebar keeps the button that expands it and a menu with the other actions in view.
+await page.locator('#toggle-sidebar').click();
+await sleep(300);
+const rail = await page.locator('#sidebar').boundingBox();
+const inside = async (selector) => {
+  const box = await page.locator(selector).boundingBox();
+  return !!box && box.x >= rail.x && box.x + box.width <= rail.x + rail.width;
+};
+report('the collapsed sidebar shows its expand and menu buttons whole', (await inside('#toggle-sidebar')) && (await inside('#sidebar-menu')));
+await page.locator('#sidebar-menu').click();
+await page.locator('.menu-item', { hasText: 'Closed Groups' }).hover();
+await sleep(300);
+await shot('1c-collapsed-sidebar-menu.png');
+await page.locator('.menu-item', { hasText: 'Show Sidebar' }).click();
+await sleep(300);
+report('the collapsed sidebar menu expands it', !(await page.locator('#sidebar').getAttribute('class')).includes('collapsed'));
+
 const before = active(await state()).root.sizes;
 const divider = await page.locator('.split-row > .divider').first().boundingBox();
 await page.mouse.move(divider.x + 1, divider.y + 200);

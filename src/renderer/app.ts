@@ -483,21 +483,47 @@ async function importGroup(): Promise<void> {
 }
 
 /** Closed groups to reopen, newest first, and opening a group from a file. */
-async function closedGroupsMenu(at: HTMLElement): Promise<void> {
+/** Closed groups to reopen or forget, and opening a group from a file. */
+function closedGroupsItems(): MenuItem[] {
   const closed = state.closedGroups ?? [];
   // The name, and on the right where the shortcut goes, when it was closed.
   const date = (time: number) => new Date(time).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  return [
+    ...(closed.length
+      ? closed.map((g) => ({ id: `reopen:${g.id}`, label: g.name, accelerator: date(g.closedAt) }))
+      : [{ id: 'none', label: 'No closed groups', enabled: false }]),
+    { id: '-', label: '' },
+    { id: 'import', label: 'Open Group from File…' },
+    ...(closed.length ? [{ id: 'forget', label: 'Forget Closed Group', submenu: closed.map((g) => ({ id: `forget:${g.id}`, label: g.name })) }] : []),
+  ];
+}
+
+async function closedGroupsMenu(at: HTMLElement): Promise<void> {
+  closedGroupChoice(await showMenu(closedGroupsItems(), at));
+}
+
+/** The actions of the sidebar header, which the collapsed sidebar has no room for. */
+async function sidebarMenu(at: HTMLElement): Promise<void> {
   const choice = await showMenu(
     [
-      ...(closed.length
-        ? closed.map((g) => ({ id: `reopen:${g.id}`, label: g.name, accelerator: date(g.closedAt) }))
-        : [{ id: 'none', label: 'No closed groups', enabled: false }]),
+      { id: 'expand', label: 'Show Sidebar', accelerator: keymap.accelerator('toggleSidebar') },
       { id: '-', label: '' },
-      { id: 'import', label: 'Open Group from File…' },
-      ...(closed.length ? [{ id: 'forget', label: 'Forget Closed Group', submenu: closed.map((g) => ({ id: `forget:${g.id}`, label: g.name })) }] : []),
+      { id: 'group', label: 'New Group', accelerator: keymap.accelerator('newGroup') },
+      { id: 'overview', label: 'All Agents', accelerator: keymap.accelerator('toggleOverview') },
+      { id: 'closed', label: 'Closed Groups', submenu: closedGroupsItems() },
+      { id: '-', label: '' },
+      { id: 'settings', label: 'Settings', accelerator: keymap.accelerator('openSettings') },
     ],
     at,
   );
+  if (choice === 'expand') setSidebarHidden(false);
+  if (choice === 'group') void newGroup();
+  if (choice === 'overview') overview.toggle();
+  if (choice === 'settings') settingsView.show();
+  closedGroupChoice(choice);
+}
+
+function closedGroupChoice(choice: string | null): void {
   if (choice?.startsWith('reopen:')) act({ type: 'reopenGroup', closedId: choice.slice('reopen:'.length), windowId: state.windowId });
   if (choice?.startsWith('forget:')) act({ type: 'forgetClosedGroup', closedId: choice.slice('forget:'.length) });
   if (choice === 'import') void importGroup();
@@ -1720,6 +1746,8 @@ async function main(): Promise<void> {
   $('add-group').before(Object.assign(iconButton('history', 'Closed groups'), { id: 'closed-groups' }));
   $('closed-groups').addEventListener('click', () => void closedGroupsMenu($('closed-groups')));
   tip($('show-overview'), 'All agents', 'toggleOverview');
+  $('toggle-sidebar').after(Object.assign(iconButton('more', 'Actions'), { id: 'sidebar-menu' }));
+  $('sidebar-menu').addEventListener('click', () => void sidebarMenu($('sidebar-menu')));
   $('add-group').addEventListener('click', () => void newGroup());
   $('toggle-sidebar').addEventListener('click', () => setSidebarHidden(!state.ui.sidebarHidden));
   tip($('add-group'), 'New group', 'newGroup');
