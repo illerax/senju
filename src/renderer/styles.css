@@ -525,6 +525,21 @@ input.rename {
   background: var(--bg);
 }
 
+/* A colored workspace: a frame around its terminals and tinted tab bars. */
+#workspace.colored {
+  padding: 3px;
+  background: var(--ws-color);
+}
+
+#workspace.colored .pane-tabs {
+  background: color-mix(in srgb, var(--ws-color) 20%, var(--surface));
+  border-bottom-color: color-mix(in srgb, var(--ws-color) 55%, transparent);
+}
+
+#workspace.colored .tab.active {
+  background: color-mix(in srgb, var(--ws-color) 34%, var(--surface));
+}
+
 #workspace > * {
   flex: 1;
   min-width: 0;

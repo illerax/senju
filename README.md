@@ -128,6 +128,7 @@ Create a group with **+** at the top of the sidebar; it starts in your home fold
 - Each pane's tab bar has buttons to add a tab, split the pane right or down, and close the pane with all its tabs. New tabs and splits start in the folder of the terminal they come from.
 - Double-click a group, workspace or tab to rename it. A tab without a name shows its running program or folder.
 - Right-click a workspace for its **Color**, a group for its folder, a terminal for copy, paste and splits.
+- A workspace's color frames its terminals and tints their tab bars, so you see which workspace you are in at a glance.
 - Drag the line between panes to resize them.
 - Ctrl+mouse wheel (Cmd+wheel or a pinch on macOS) zooms the text of the tab under the pointer; so do the tab zoom shortcuts below for the focused tab. Other shortcuts zoom all terminals, and a tab's own zoom adds to that. While the focused tab is zoomed, the status bar shows its zoom; click it to return the tab to the font's own size. A terminal's context menu has **Reset Tab Zoom** and **Reset Zoom of All Terminals**. Both zooms are kept across restarts.
 - Select text with the mouse; on Linux it also goes to the primary selection, and a middle click pastes it. Ctrl+click (Cmd+click on macOS) opens a link in the browser, including links that programs print with a different text (OSC 8 hyperlinks); hovering one shows its address.
