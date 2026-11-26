@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.3](https://github.com/illerax/senju/compare/v0.3.2...v0.3.3) (2026-11-26)
+
+
+### Bug Fixes
+
+* enter copy mode with Ctrl+Shift+Y, which input method switchers leave free ([#61](https://github.com/illerax/senju/issues/61)) ([9c5b559](https://github.com/illerax/senju/commit/9c5b559e6232dc2be56ce7ee6494c17abe9d23e2))
+
 ## [0.3.2](https://github.com/illerax/senju/compare/v0.3.1...v0.3.2) (2026-11-25)
 
 
