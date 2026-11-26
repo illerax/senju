@@ -76,6 +76,7 @@ describe('Keymap', () => {
     expect(keymap.match(key('KeyC'), 'copyMode')).toBe('copyModeCopy');
     expect(keymap.match(key('KeyY'), 'copyMode')).toBeNull();
     expect(keymap.match(key('Space', { ctrlKey: true, shiftKey: true }))).toBe('copyMode');
+    expect(keymap.match(key('KeyY', { ctrlKey: true, shiftKey: true }))).toBe('copyMode');
     expect(keymap.commandsFor('J')).toEqual([]);
     expect(keymap.commandsFor('J', 'copyMode')).toEqual(['copyModeDown']);
   });

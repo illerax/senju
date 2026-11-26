@@ -206,7 +206,7 @@ const keys = async (...list) => {
 };
 const promptLine = () => page.evaluate(() => [...document.querySelectorAll('.pane.focused .xterm-rows > div')].map((r) => r.textContent).find((t) => t.includes('$')) ?? '');
 const promptBefore = await promptLine();
-await keys('Control+Shift+Space');
+await keys('Control+Shift+Y');
 report('copy mode shows its keys', await page.locator('.pane.focused .copy-mode-bar:not([hidden])').filter({ hasText: 'Copy mode' }).isVisible());
 await keys('k', 'k', '0', 'v', 'Shift+Digit4');
 report('copy mode shows that it is selecting', await page.locator('.pane.focused .copy-mode-bar').filter({ hasText: 'Selecting' }).isVisible());

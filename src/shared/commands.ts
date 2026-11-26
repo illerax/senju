@@ -67,7 +67,7 @@ export const commands = {
 
   copy: { label: 'Copy', category: 'Clipboard', linux: ['Ctrl+Shift+C'], mac: ['Cmd+C'] },
   paste: { label: 'Paste', category: 'Clipboard', linux: ['Ctrl+Shift+V', 'Shift+Insert'], mac: ['Cmd+V'] },
-  copyMode: { label: 'Copy mode: select and copy text with the keyboard', category: 'Clipboard', linux: ['Ctrl+Shift+Space'], mac: ['Cmd+Shift+Space'] },
+  copyMode: { label: 'Copy mode: select and copy text with the keyboard', category: 'Clipboard', linux: ['Ctrl+Shift+Y', 'Ctrl+Shift+Space'], mac: ['Cmd+Shift+Space'] },
 
   newWindow: { label: 'New window', category: 'Window', linux: ['Ctrl+Shift+O'], mac: ['Cmd+Shift+O'] },
   toggleSidebar: { label: 'Show or hide the sidebar', category: 'Window', linux: ['Ctrl+Shift+B'], mac: ['Cmd+B'] },
